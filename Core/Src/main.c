@@ -23,6 +23,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include"task_dispatcher.h"
+#include"task_can_handler.h"
+#include"task_usb_handler.h"
+#include"task_watchdog.h"
+#include"task_jobs_monitor.h"
+#include"task_logger.h"
 
 /* USER CODE END Includes */
 
@@ -99,7 +105,7 @@ static void MX_FDCAN1_Init(void);
 void start_task_can_handler(void *argument);
 void start_task_usb_handler(void *argument);
 void start_task_dispatcher(void *argument);
-void start_task_watchdag(void *argument);
+void start_task_watchdog(void *argument);
 void start_task_jobs_monitor(void *argument);
 void start_task_logger(void *argument);
 
@@ -179,7 +185,7 @@ int main(void)
   task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
 
   /* creation of task_watchdog */
-  task_watchdogHandle = osThreadNew(start_task_watchdag, NULL, &task_watchdog_attributes);
+  task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
 
   /* creation of task_jobs_monit */
   task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
@@ -319,7 +325,8 @@ static void MX_FDCAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN FDCAN1_Init 2 */
-
+  /* init code for USB_DEVICE */
+    MX_USB_DEVICE_Init();
   /* USER CODE END FDCAN1_Init 2 */
 
 }
@@ -357,9 +364,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_start_task_can_handler */
 void start_task_can_handler(void *argument)
 {
-  /* init code for USB_DEVICE */
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
+  app_start_task_can_handler(argument);
   /* Infinite loop */
   for(;;)
   {
@@ -378,6 +384,8 @@ void start_task_can_handler(void *argument)
 void start_task_usb_handler(void *argument)
 {
   /* USER CODE BEGIN start_task_usb_handler */
+  app_start_task_usb_handler(argument);
+
   /* Infinite loop */
   for(;;)
   {
@@ -396,7 +404,12 @@ void start_task_usb_handler(void *argument)
 void start_task_dispatcher(void *argument)
 {
   /* USER CODE BEGIN start_task_dispatcher */
-  /* Infinite loop */
+
+ app_start_task_dispatcher(argument);
+
+ /* Infinite loop */
+ // этот код никогда не выполнится, но мы его не трогаем
+
   for(;;)
   {
     osDelay(1);
@@ -404,22 +417,22 @@ void start_task_dispatcher(void *argument)
   /* USER CODE END start_task_dispatcher */
 }
 
-/* USER CODE BEGIN Header_start_task_watchdag */
+/* USER CODE BEGIN Header_start_task_watchdog */
 /**
-* @brief Function implementing the task_watchdag thread.
+* @brief Function implementing the task_watchdog thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_start_task_watchdag */
-void start_task_watchdag(void *argument)
+/* USER CODE END Header_start_task_watchdog */
+void start_task_watchdog(void *argument)
 {
-  /* USER CODE BEGIN start_task_watchdag */
+  /* USER CODE BEGIN start_task_watchdog */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END start_task_watchdag */
+  /* USER CODE END start_task_watchdog */
 }
 
 /* USER CODE BEGIN Header_start_task_jobs_monitor */
@@ -432,6 +445,8 @@ void start_task_watchdag(void *argument)
 void start_task_jobs_monitor(void *argument)
 {
   /* USER CODE BEGIN start_task_jobs_monitor */
+
+	app_start_task_jobs_monitor(argument);
   /* Infinite loop */
   for(;;)
   {
@@ -450,6 +465,7 @@ void start_task_jobs_monitor(void *argument)
 void start_task_logger(void *argument)
 {
   /* USER CODE BEGIN start_task_logger */
+  app_start_task_logger(argument);
   /* Infinite loop */
   for(;;)
   {
