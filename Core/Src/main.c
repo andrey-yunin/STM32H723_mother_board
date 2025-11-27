@@ -23,12 +23,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include"task_dispatcher.h"
-#include"task_can_handler.h"
-#include"task_usb_handler.h"
-#include"task_watchdog.h"
-#include"task_jobs_monitor.h"
-#include"task_logger.h"
+#include "task_dispatcher.h"
+#include "task_can_handler.h"
+#include "task_usb_handler.h"
+#include "task_watchdog.h"
+#include "task_jobs_monitor.h"
+#include "task_logger.h"
+#include "shared_resources.h"
+#include "app_config.h"
 
 /* USER CODE END Includes */
 
@@ -95,6 +97,14 @@ const osThreadAttr_t task_logger_attributes = {
 };
 /* USER CODE BEGIN PV */
 
+QueueHandle_t usb_rx_queue_handle;
+QueueHandle_t usb_tx_queue_handle;
+QueueHandle_t can_rx_queue_handle;
+QueueHandle_t can_tx_queue_handle;
+QueueHandle_t log_queue_handle;
+
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -152,7 +162,8 @@ int main(void)
   MX_GPIO_Init();
   MX_FDCAN1_Init();
   /* USER CODE BEGIN 2 */
-
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -172,6 +183,22 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
+  usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, APP_USB_RESP_MAX_LEN); // 10 ответов, каждая до 256 байт (пока)
+
+// Для CAN передаются структурированные сообщения.
+// Пока что представим, что это будет 8-байтный массив (payload CAN-сообщения).
+// Позже мы определим структуру CanMessage_t.
+  can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+  can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+
+  log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
+
+// Важно: всегда проверяйте, что очереди успешно создались!
+// Если какая-либо очередь не создалась (handle == NULL),
+// это указывает на нехватку памяти FreeRTOS (heap).
+// Пока можно игнорировать, но в продакшн-коде нужно обрабатывать!
+
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -325,8 +352,7 @@ static void MX_FDCAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN FDCAN1_Init 2 */
-  /* init code for USB_DEVICE */
-    MX_USB_DEVICE_Init();
+
   /* USER CODE END FDCAN1_Init 2 */
 
 }
