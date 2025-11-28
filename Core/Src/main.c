@@ -31,6 +31,7 @@
 #include "task_logger.h"
 #include "shared_resources.h"
 #include "app_config.h"
+#include "app_init_checker.h"
 
 /* USER CODE END Includes */
 
@@ -197,7 +198,10 @@ int main(void)
 // Важно: всегда проверяйте, что очереди успешно создались!
 // Если какая-либо очередь не создалась (handle == NULL),
 // это указывает на нехватку памяти FreeRTOS (heap).
-// Пока можно игнорировать, но в продакшн-коде нужно обрабатывать!
+
+// Вызываем функцию проверки всех очередей
+  app_init_checker_verifyqueues();
+
 
   /* USER CODE END RTOS_QUEUES */
 

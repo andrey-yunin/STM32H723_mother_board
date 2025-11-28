@@ -1,6 +1,7 @@
 # Build output directories
 Debug/
 Release/
+.venv/
 
 # STM32CubeIDE project files
 .cproject
