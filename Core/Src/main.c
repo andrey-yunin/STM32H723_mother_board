@@ -184,42 +184,42 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
-  usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
+  //usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
   usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, APP_USB_RESP_MAX_LEN); // 10 ответов, каждая до 256 байт (пока)
 
 // Для CAN передаются структурированные сообщения.
 // Пока что представим, что это будет 8-байтный массив (payload CAN-сообщения).
 // Позже мы определим структуру CanMessage_t.
-  can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
-  can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+  //can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+  //can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
 
-  log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
+  //log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
 
 // Важно: всегда проверяйте, что очереди успешно создались!
 // Если какая-либо очередь не создалась (handle == NULL),
 // это указывает на нехватку памяти FreeRTOS (heap).
 
 // Вызываем функцию проверки всех очередей
-  app_init_checker_verifyqueues();
+ // app_init_checker_verifyqueues();
 
 
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
   /* creation of task_can_handle */
-  task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
+ // task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
 
   /* creation of task_usb_handle */
   task_usb_handleHandle = osThreadNew(start_task_usb_handler, NULL, &task_usb_handle_attributes);
 
   /* creation of task_dispatcher */
-  task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
+  //task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
 
   /* creation of task_watchdog */
-  task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
+  //task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
 
   /* creation of task_jobs_monit */
-  task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
+ // task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
 
   /* creation of task_logger */
   task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
@@ -263,7 +263,7 @@ void SystemClock_Config(void)
 
   /** Configure the main internal regulator output voltage
   */
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
   while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
@@ -277,7 +277,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 12;
+  RCC_OscInitStruct.PLL.PLLN = 32;
   RCC_OscInitStruct.PLL.PLLP = 1;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -296,13 +296,13 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV2;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -368,13 +368,25 @@ static void MX_FDCAN1_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : LED_Pin */
+  GPIO_InitStruct.Pin = LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -394,6 +406,7 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_start_task_can_handler */
 void start_task_can_handler(void *argument)
 {
+
   /* USER CODE BEGIN 5 */
   app_start_task_can_handler(argument);
   /* Infinite loop */

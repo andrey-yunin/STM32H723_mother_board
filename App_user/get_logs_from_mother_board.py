@@ -5,7 +5,7 @@ import time
 # Укажите имя вашего COM-порта.
 # Пример для Linux: '/dev/ttyACM0'
 # Пример для Windows: 'COM3'
-SERIAL_PORT = '/dev/ttyACM0' 
+SERIAL_PORT = '/dev/ttyACM2' 
 
 # Скорость порта (для USB VCP обычно не имеет значения, но должна быть указана)
 BAUD_RATE = 9600
