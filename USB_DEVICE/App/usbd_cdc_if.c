@@ -23,6 +23,11 @@
 
 /* USER CODE BEGIN INCLUDE */
 
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "shared_resources.h"
+#include "app_config.h"
+
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -264,8 +269,18 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
-  USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+       if (*Len < APP_USB_CMD_MAX_LEN)
+       {
+         Buf[*Len] = '\0'; // Добавляем нуль-терминатор
+         xQueueSendFromISR(usb_rx_queue_handle, (void *)Buf, &xHigherPriorityTaskWoken);
+       }
+
+       USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+       USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+       portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   return (USBD_OK);
   /* USER CODE END 11 */
 }

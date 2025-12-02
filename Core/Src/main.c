@@ -184,7 +184,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
-  //usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
+  usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
   usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, APP_USB_RESP_MAX_LEN); // 10 ответов, каждая до 256 байт (пока)
 
 // Для CAN передаются структурированные сообщения.
@@ -200,7 +200,7 @@ int main(void)
 // это указывает на нехватку памяти FreeRTOS (heap).
 
 // Вызываем функцию проверки всех очередей
- // app_init_checker_verifyqueues();
+ //app_init_checker_verifyqueues();
 
 
   /* USER CODE END RTOS_QUEUES */
@@ -213,16 +213,16 @@ int main(void)
   task_usb_handleHandle = osThreadNew(start_task_usb_handler, NULL, &task_usb_handle_attributes);
 
   /* creation of task_dispatcher */
-  //task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
+  task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
 
   /* creation of task_watchdog */
   //task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
 
   /* creation of task_jobs_monit */
- // task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
+  //task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
 
   /* creation of task_logger */
-  task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
+ // task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -406,8 +406,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_start_task_can_handler */
 void start_task_can_handler(void *argument)
 {
+  /* init code for USB_DEVICE */
 
-  /* USER CODE BEGIN 5 */
   app_start_task_can_handler(argument);
   /* Infinite loop */
   for(;;)
@@ -426,6 +426,8 @@ void start_task_can_handler(void *argument)
 /* USER CODE END Header_start_task_usb_handler */
 void start_task_usb_handler(void *argument)
 {
+	// Если отправка в очередь прошла успешно, включаем светодиод
+	//	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
   /* USER CODE BEGIN start_task_usb_handler */
   app_start_task_usb_handler(argument);
 

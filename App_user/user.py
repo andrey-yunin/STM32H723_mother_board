@@ -4,12 +4,13 @@ import time
 # --- НАСТРОЙКИ ---
 # Укажите имя вашего COM-порта.
 # Пример для Linux: '/dev/ttyACM0'
-# Пример для Windows: 'COM3'
-SERIAL_PORT = '/dev/ttyACM2' 
+SERIAL_PORT = '/dev/ttyACM3' 
 
 # Скорость порта (для USB VCP обычно не имеет значения, но должна быть указана)
 BAUD_RATE = 9600
 
+# Тайм аут 2 сек
+TIMEOUT = 2
 
 # --- ОСНОВНОЙ СКРИПТ ---
 def main():
@@ -28,22 +29,45 @@ def main():
         # Небольшая пауза, чтобы устройство успело инициализироваться
         time.sleep(2)
 
-        #Бесконечный цикл для прослушивания порта
-        while True:
-            # Читаем строку из порта
-            # timeout = 1 означает, что ser.readline() будет ждать одной секунды.
-            # Если ничего не придет, вернется пкстая строка.
-            line = ser.readline().decode('utf-8').strip()
+        # --- Создаем блок команд для отправки ---
+        commands_to_send = [
+            "CMD_GET_STATUS",
+            "CMD_START_MOTOR_1",
+            "CMD_READ_SENSOR_3",
+            "CMD_SET_POWER_LEVEL_85",
+            "CMD_PERFORM_DIAGNOSTICS"
+            ]
 
-            # Если строка не пустая, печатаем ее
-            print(f"Получено: {line}")   
+        # --- Быстро отправляем все команды ---
+        print("\n--- Отправка блока команд ---")
+        for cmd in commands_to_send:
+            print(f"Отправка: {cmd}")
+            ser.write((cmd + '\n').encode('utf-8'))
+            time.sleep(0.05) # Маленькая пауза, чтобы не перегружать драйвер, но все равно очень быстро
+
+
+        # --- Получаем все ответы ---
+        
+        print("\n--- Получение ответов ---")
+        responses_received = 0
+        while responses_received < len(commands_to_send):
+            response = ser.readline().decode('utf-8').strip()
+            if response:
+                print(f"Получено: {response}")
+                responses_received += 1
+                time.sleep(1)
+                
+            else:
+                # Если мы не получили ответ за TIMEOUT секунд, выходим
+                print(f"Таймаут ожидания ответа №{responses_received + 1}. Прерывание.")
+                break
 
     except serial.SerialException as e:
         print(f"Ошибка: Не удалось открыть порт {SERIAL_PORT}.")
         print(f"Подробности: {e}")
         print("Пожалуйста, проверьте имя порта и подключение устройства.")
 
-        
+          
     except KeyboardInterrupt:
         # Обработка нажатия Ctrl+C
         print("\nПрограмма завершена пользователем.")

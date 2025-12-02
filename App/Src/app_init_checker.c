@@ -20,13 +20,14 @@
  {
      if (usb_rx_queue_handle == NULL || // Можно было бы отправить в логгер сообщение об ошибке, но так как логгер еще не гарантированно работает, сразу вызываем Error_Handler
          usb_tx_queue_handle == NULL ||
-         can_rx_queue_handle == NULL ||
-		 can_tx_queue_handle == NULL ||
-		 log_queue_handle == NULL)
+         log_queue_handle == NULL)
      {
     	 Error_Handler();
      }
 
+
+     //can_rx_queue_handle == NULL ||
+     //can_tx_queue_handle == NULL ||
 
      // Если все проверки пройдены, значит, все очереди успешно созданы.
  }
