@@ -37,6 +37,12 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
+// Static buffer to assemble commands line-by-line
+static char g_line_buffer[APP_USB_CMD_MAX_LEN];
+ // Current write index for the line buffer
+static uint32_t g_line_buffer_idx = 0;
+
+
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -269,19 +275,51 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
-
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-       if (*Len < APP_USB_CMD_MAX_LEN)
-       {
-         Buf[*Len] = '\0'; // Добавляем нуль-терминатор
-         xQueueSendFromISR(usb_rx_queue_handle, (void *)Buf, &xHigherPriorityTaskWoken);
-       }
+   // Process each received character one by one
+   for (uint32_t i = 0; i < *Len; i++)
+   {
+       char received_char = Buf[i];
 
-       USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
-       USBD_CDC_ReceivePacket(&hUsbDeviceHS);
-       portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-  return (USBD_OK);
+       // Check for newline character, indicating end of a command
+       if (received_char == '\n' || received_char == '\r')
+       {
+           // Only process if the line buffer is not empty
+           if (g_line_buffer_idx > 0)
+           {
+               // Null-terminate the string in our line buffer
+               g_line_buffer[g_line_buffer_idx] = '\0';
+
+               // Send the completed command line to the dispatcher task
+               xQueueSendFromISR(usb_rx_queue_handle, (void *)g_line_buffer, &xHigherPriorityTaskWoken);
+
+               // Reset the buffer index to start collecting the next command
+               g_line_buffer_idx = 0;
+           }
+           // If the buffer is empty, we just ignore the newline
+       }
+       else
+       {
+           // Add the character to the line buffer if there's space
+           if (g_line_buffer_idx < APP_USB_CMD_MAX_LEN - 1)
+           {
+               g_line_buffer[g_line_buffer_idx++] = received_char;
+           }
+           // else: character is dropped because the buffer is full (prevents overflow)
+       }
+   }
+
+   // Re-arm the USB endpoint to be ready for the next packet
+   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+
+   // If a task was woken, yield to it.
+   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+   return (USBD_OK);
+
+
+
   /* USER CODE END 11 */
 }
 
