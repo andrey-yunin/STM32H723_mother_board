@@ -13,7 +13,7 @@
 
 
 /**
-  * @brief "База Ингредиентов": типы атомарных действий для всех рецептов.
+  * @brief "Ingredients base": types of atomic actions for all recipes.
   */
  typedef enum {
      ACTION_NONE = 0,        // Маркер конца рецепта, "Ничего не делать"
@@ -27,8 +27,7 @@
 
 
  /**
-  * @brief Структура "Атомарного Действия".
-  *        Описывает одно конкретное действие и его параметры.
+  * @brief Structure of "Atomic action" It describes one concrete action end its parameters.
   */
  typedef struct {
      // What to do:
@@ -63,7 +62,7 @@
  } AtomicAction_t; //
 
   /**
-  * @brief Структура "Шаг Рецепта".
+  * @brief Structure "Recipe step".
   *        Представляет собой группу из одного или нескольких атомарных действий,
   *        которые должны быть запущены одновременно.
   */

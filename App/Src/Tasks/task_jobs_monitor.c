@@ -6,22 +6,27 @@
  */
 
 #include "task_jobs_monitor.h"
+#include "cmsis_os.h"
+#include "Dispatcher/job_manager.h"
 
-/* USER CODE BEGIN Header_start_task_jobs_monitor */
+#define JOBS_MONITOR_PERIOD_MS 100
+
+
 /**
-* @brief Function implementing the task_jobs_monit thread.
-* @param argument: Not used
-* @retval None
+* @brief Основная логика задачи монитора заданий.
+*        Эта задача периодически просыпается и вызывает JobManager_Run()
+*        для проверки таймаутов и обработки внутренних шагов рецептов.
 */
-/* USER CODE END Header_start_task_jobs_monitor */
+
 void app_start_task_jobs_monitor(void *argument)
 {
-  /* USER CODE BEGIN start_task_jobs_monitor */
-  /* Infinite loop */
+
   for(;;)
   {
-    //osDelay(1);
+	  JobManager_Run();
+	  // "Засыпаем" на заданный период
+	  osDelay(JOBS_MONITOR_PERIOD_MS);
   }
-  /* USER CODE END start_task_jobs_monitor */
+
 }
 

@@ -33,6 +33,7 @@
 #include "app_config.h"
 #include "app_init_checker.h"
 
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -219,7 +220,7 @@ int main(void)
   //task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
 
   /* creation of task_jobs_monit */
-  //task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
+  task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
 
   /* creation of task_logger */
  // task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);

@@ -1491,7 +1491,7 @@
    1         g_active_jobs[0].is_active = true;                                                                                                                                                                                               
    2         g_active_jobs[0].job_id = 113; // Генерируем уникальный ID                                                                                                                                                                       
    3         g_active_jobs[0].current_step = SEQ_MOTOR_PUMP_START;                                                                                                                                                                            
-       * Сразу после создания, он вызывает "движок" конечного автомата для этого проекта, например, run_job_sequencer(&g_active_jobs[0]).                                                                                                     
+       * Сразу после создания, он вызывает "движок" git конечного автомата для этого проекта, например, run_job_sequencer(&g_active_jobs[0]).                                                                                                     
                                                                                                                                                                                                                                               
   ---                                                                                                                                                                                                                                         
                                                                                                                                                                                                                                               
@@ -9329,6 +9329,151 @@ s
   *Примечание: для полной безопасности можете использовать версию `snprintf` с `%.*s, но и эта простая версия теперь должна работать, так как rx_buffer` всегда будет корректной строкой.*
 
   Я уверен, что после этих двух изменений ваш тест покажет 5 идеальных, отдельных и полных строк ответа.
+
+> я изменять буду все сам, просто присылай код с комментариями
+
+✦ Of course. I will provide the complete code blocks with explanations. You can then integrate them into your project.
+
+  Here is the final, robust solution to fix the command fragmentation issue.
+
+  1. File: USB_DEVICE/App/usbd_cdc_if.c
+
+  This is the most critical change. We will add a static line buffer to assemble commands.
+
+  A. Add Static Variables
+
+  Place this code inside the /* USER CODE BEGIN PV */ section. These variables will store the incoming command line between separate USB packets.
+
+   1 /* USER CODE BEGIN PV */
+   2 /* Private variables ---------------------------------------------------------*/
+   3 
+   4 // Static buffer to assemble commands line-by-line
+   5 static char g_line_buffer[APP_USB_CMD_MAX_LEN];
+   6 // Current write index for the line buffer
+   7 static uint32_t g_line_buffer_idx = 0;
+   8 
+   9 /* USER CODE END PV */
+
+  B. Replace `CDC_Receive_HS` function
+
+  Replace the entire existing CDC_Receive_HS function with this new version. This function iterates through each received byte, assembling a line until a newline character is found.
+
+    1 /**
+    2   * @brief Data received over USB OUT endpoint are sent over CDC interface
+    3   *         through this function.
+    4   *
+    5   * @param  Buf: Buffer of data to be received
+    6   * @param  Len: Number of data received (in bytes)
+    7   * @retval Result of the operation: USBD_OK if all operations are OK else USBD_FAIL
+    8   */
+    9 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
+   10 {
+   11   /* USER CODE BEGIN 11 */
+   12   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+   13 
+   14   // Process each received character one by one
+   15   for (uint32_t i = 0; i < *Len; i++)
+   16   {
+   17       char received_char = Buf[i];
+   18 
+   19       // Check for newline character, indicating end of a command
+   20       if (received_char == '\n' || received_char == '\r')
+   21       {
+   22           // Only process if the line buffer is not empty
+   23           if (g_line_buffer_idx > 0)
+   24           {
+   25               // Null-terminate the string in our line buffer
+   26               g_line_buffer[g_line_buffer_idx] = '\0';
+   27 
+   28               // Send the completed command line to the dispatcher task
+   29               xQueueSendFromISR(usb_rx_queue_handle, (void *)g_line_buffer, &xHigherPriorityTaskWoken);
+   30 
+   31               // Reset the buffer index to start collecting the next command
+   32               g_line_buffer_idx = 0;
+   33           }
+   34           // If the buffer is empty, we just ignore the newline
+   35       }
+   36       else
+   37       {
+   38           // Add the character to the line buffer if there's space
+   39           if (g_line_buffer_idx < APP_USB_CMD_MAX_LEN - 1)
+   40           {
+   41               g_line_buffer[g_line_buffer_idx++] = received_char;
+   42           }
+   43           // else: character is dropped because the buffer is full (prevents overflow)
+   44       }
+   45   }
+   46 
+   47   // Re-arm the USB endpoint to be ready for the next packet
+   48   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+   49   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+   50 
+   51   // If a task was woken, yield to it.
+   52   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+   53   return (USBD_OK);
+   54   /* USER CODE END 11 */
+   55 }
+
+  2. File: App/Src/Tasks/task_dispatcher.c
+
+  Now that the dispatcher will receive clean, complete command lines, you can return its logic to what it was intended to do: formatting a proper response. Please replace the app_start_task_dispatcher function with this code.
+
+    1 // In App/Src/Tasks/task_dispatcher.c
+    2 #include "cmsis_os.h"
+    3 #include "shared_resources.h"
+    4 #include "app_config.h"
+    5 #include "string.h"
+    6 #include "stdio.h"
+    7 
+    8 void app_start_task_dispatcher(void *argument)
+    9 {
+   10     // Buffer to hold the command received from the queue
+   11     char rx_buffer[APP_USB_CMD_MAX_LEN];
+   12     // Buffer to hold the formatted response message
+   13     char confirmation_msg[APP_USB_RESP_MAX_LEN];
+   14 
+   15     for(;;)
+   16     {
+   17         // Wait indefinitely for a complete command line from the USB handler
+   18         if (xQueueReceive(usb_rx_queue_handle, (void *)rx_buffer, portMAX_DELAY) == pdPASS)
+   19         {
+   20             // Now that rx_buffer is guaranteed to be a correct, null-terminated string,
+   21             // we can safely use it to format a response.
+   22             snprintf(confirmation_msg, APP_USB_RESP_MAX_LEN, "DISPATCHER: Received '%s'", rx_buffer);
+   23 
+   24             // Send the formatted confirmation back to the USB task to be transmitted.
+   25             xQueueSend(usb_tx_queue_handle, (void *)confirmation_msg, pdMS_TO_TICKS(100));
+   26         }
+   27     }
+   28 }
+
+  After applying these changes, your system should correctly handle the stream of commands from the Python script, and you should see five complete and separate responses in your terminal.
+
+> отлично! так работает!(.venv) andrey@andrey-yunin:~/STM32CubeIDE/workspace_1.19.0/STM32H723_mother_board/App_user$ python3 user.py
+  Попытка подключения к порту /dev/ttyACM1 на скорости 9600...
+  Соединение установлено. Ожидание Сообщений
+  Для выхода нажмите Сrtl+С
+
+  --- Отправка блока команд ---
+  Отправка: CMD_GET_STATUS
+  Отправка: CMD_START_MOTOR_1
+  Отправка: CMD_READ_SENSOR_3
+  Отправка: CMD_SET_POWER_LEVEL_85
+  Отправка: CMD_PERFORM_DIAGNOSTICS
+
+  --- Получение ответов ---
+  Получено: DISPATCHER: Received 'CMD_GET_STATUS'
+  Получено: DISPATCHER: Received 'CMD_START_MOTOR_1'
+  Получено: DISPATCHER: Received 'CMD_READ_SENSOR_3'
+  Получено: DISPATCHER: Received 'CMD_SET_POWER_LEVEL_85'
+  Получено: DISPATCHER: Received 'CMD_PERFORM_DIAGNOSTICS'
+  Соединение закрыто.
+
+✦ Отлично! Я рад, что проблема решена и система работает как ожидалось. Ваши логи подтверждают, что команды обрабатываются корректно, как полные и отдельные строки.
+
+  Теперь, когда основная проблема с фрагментацией команд решена, хотите ли вы продолжить работу над модульной архитектурой задач, которую мы обсуждали (разбиение задач на отдельные файлы и т.д.), или у вас есть другой запрос?
+
+> это все сделано, ты можешь проверить проект и сопастаить с нашим диалогом в файле conduct
 
 
 
