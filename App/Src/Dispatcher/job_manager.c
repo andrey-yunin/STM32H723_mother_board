@@ -218,7 +218,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 	   const AtomicAction_t* action = &current_step->atomic_actions[i];
         // Placeholder for CAN_Message_t - will be defined in can_packer.h
         // Placeholder for can_msg - will be used after can_packer is implemented
-        // CAN_Message_t can_msg; // Эта переменная нужна, если вы реально отправляете CAN-сообщения
+        CAN_Message_t can_msg; // Эта переменная нужна, если вы реально отправляете CAN-сообщения
         switch (action->action) {
               case ACTION_ROTATE_MOTOR:
                // --- DEBUG-СООБЩЕНИЕ ---
@@ -227,8 +227,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                   job->job_id, action->params.rotate_motor.motor_id, action->params.rotate_motor.steps, action->params.rotate_motor.speed);
                   Dispatcher_SendUsbResponse(motor_msg);
                   // --- РЕАЛЬНАЯ ОТПРАВКА CAN (после реализации can_packer) ---
-                  // Packer_CreateRotateMotorMsg(action->params.rotate_motor.motor_id, action->params.rotate_motor.steps, action->params.rotate_motor.speed, job->job_id, &can_msg);
-                  // xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                  Packer_CreateRotateMotorMsg(action->params.rotate_motor.motor_id, action->params.rotate_motor.steps, action->params.rotate_motor.speed, job->job_id, &can_msg);
+                  xQueueSend(can_tx_queue_handle, &can_msg, 0);
                   break;
 
                case ACTION_START_PUMP:
@@ -237,8 +237,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 				  snprintf(pump_start_msg, sizeof(pump_start_msg), "DEBUG: Job #%lu: Sent START_PUMP (ID:%u) to Exec.", job->job_id, action->params.pump.pump_id);
                   Dispatcher_SendUsbResponse(pump_start_msg);
                   // --- РЕАЛЬНАЯ ОТПРАВКА CAN ---
-                  // Packer_CreateStartPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
-                  // xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                  Packer_CreateStartPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
+                  xQueueSend(can_tx_queue_handle, &can_msg, 0);
                   break;
 
                case ACTION_STOP_PUMP:
@@ -247,8 +247,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                    snprintf(pump_stop_msg, sizeof(pump_stop_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (ID:%u) to Exec.", job->job_id, action->params.pump.pump_id);
                    Dispatcher_SendUsbResponse(pump_stop_msg);
                    // --- РЕАЛЬНАЯ ОТПРАВКА CAN ---
-                   // Packer_CreateStopPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
-                   // xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                   Packer_CreateStopPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
+                   xQueueSend(can_tx_queue_handle, &can_msg, 0);
                    break;
 
                 case ACTION_HOME_MOTOR:
@@ -258,8 +258,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                     job->job_id, action->params.home_motor.motor_id, action->params.home_motor.speed);
                     Dispatcher_SendUsbResponse(home_msg);
                     // --- РЕАЛЬНАЯ ОТПРАВКА CAN ---
-                    // Packer_CreateHomeMotorMsg(action->params.home_motor.motor_id, action->params.home_motor.speed, job->job_id, &can_msg);
-                    // xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                    Packer_CreateHomeMotorMsg(action->params.home_motor.motor_id, action->params.home_motor.speed, job->job_id, &can_msg);
+                    xQueueSend(can_tx_queue_handle, &can_msg, 0);
                     break;
 
                  case ACTION_WAIT_MS:

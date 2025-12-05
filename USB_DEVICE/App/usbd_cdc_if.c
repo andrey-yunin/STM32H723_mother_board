@@ -260,7 +260,7 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 /**
   * @brief Data received over USB OUT endpoint are sent over CDC interface
   *         through this function.
-  *
+  *osSemaphoreId_t
   *         @note
   *         This function will issue a NAK packet on any OUT packet received on
   *         USB endpoint until exiting this function. If you exit this function
@@ -363,7 +363,14 @@ static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
-  /* USER CODE END 14 */
+
+//HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+
+// Передача по USB физически завершена! "Поднимаем" семафор.
+//osSemaphoreRelease(usb_tx_semHandle);
+
+
+/* USER CODE END 14 */
   return result;
 }
 

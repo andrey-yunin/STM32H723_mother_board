@@ -5,22 +5,16 @@
  *      Author: andrey
  */
 
+#include "Tasks/task_can_handler.h"
+#include "cmsis_os.h"
+
 #include"task_can_handler.h"
 
-/* USER CODE BEGIN Header_start_task_can_handler */
-/**
-  * @brief  Function implementing the task_can_handle thread.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_start_task_can_handler */
 void app_start_task_can_handler(void *argument)
 {
-    /* USER CODE BEGIN 5 */
-  /* Infinite loop */
   for(;;)
   {
-   // osDelay(1);
+	  osDelay(1000);
   }
-  /* USER CODE END 5 */
+
 }

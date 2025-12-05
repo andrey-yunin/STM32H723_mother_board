@@ -97,6 +97,11 @@ const osThreadAttr_t task_logger_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow1,
 };
+/* Definitions for usb_tx_sem */
+osSemaphoreId_t usb_tx_semHandle;
+const osSemaphoreAttr_t usb_tx_sem_attributes = {
+  .name = "usb_tx_sem"
+};
 /* USER CODE BEGIN PV */
 
 QueueHandle_t usb_rx_queue_handle;
@@ -175,6 +180,10 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* creation of usb_tx_sem */
+ // usb_tx_semHandle = osSemaphoreNew(1, 1, &usb_tx_sem_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -191,8 +200,8 @@ int main(void)
 // Для CAN передаются структурированные сообщения.
 // Пока что представим, что это будет 8-байтный массив (payload CAN-сообщения).
 // Позже мы определим структуру CanMessage_t.
-  //can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
-  //can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+  can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+  can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
 
   //log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
 
@@ -223,7 +232,7 @@ int main(void)
   task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
 
   /* creation of task_logger */
- // task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
+  //task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -407,9 +416,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_start_task_can_handler */
 void start_task_can_handler(void *argument)
 {
-  /* init code for USB_DEVICE */
-
-  app_start_task_can_handler(argument);
+  /* USER CODE BEGIN 5 */
+app_start_task_can_handler(argument);
   /* Infinite loop */
   for(;;)
   {
@@ -427,8 +435,6 @@ void start_task_can_handler(void *argument)
 /* USER CODE END Header_start_task_usb_handler */
 void start_task_usb_handler(void *argument)
 {
-	// Если отправка в очередь прошла успешно, включаем светодиод
-	//	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
   /* USER CODE BEGIN start_task_usb_handler */
   app_start_task_usb_handler(argument);
 

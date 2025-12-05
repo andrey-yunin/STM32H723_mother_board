@@ -51,19 +51,19 @@ def main():
 
         # --- Получаем все ответы ---
         
-        print("\n--- Получение ответов ---")
-        responses_received = 0
-        while responses_received < len(commands_to_send):
+        # Установим общее время ожидания, например, 10 секунд,
+        # чтобы успеть получить все асинхронные сообщения от устройства.
+        start_time = time.time()
+        while time.time() - start_time < 10:
+            # Устанавливаем таймаут для каждой операции чтения, чтобы цикл не блокировался навсегда
+            ser.timeout = 1
             response = ser.readline().decode('utf-8').strip()
             if response:
                 print(f"Получено: {response}")
-                responses_received += 1
-                time.sleep(1)
-                
             else:
-                # Если мы не получили ответ за TIMEOUT секунд, выходим
-                print(f"Таймаут ожидания ответа №{responses_received + 1}. Прерывание.")
-                break
+                # Если ничего не пришло за 1 секунду, просто продолжаем ждать
+                # до истечения общего таймаута в 10 секунд.
+                pass
 
     except serial.SerialException as e:
         print(f"Ошибка: Не удалось открыть порт {SERIAL_PORT}.")

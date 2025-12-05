@@ -10,6 +10,7 @@
 
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "cmsis_os.h"
 
 
 // Объявления очередей
@@ -19,7 +20,9 @@ extern QueueHandle_t can_rx_queue_handle;
 extern QueueHandle_t can_tx_queue_handle;
 extern QueueHandle_t log_queue_handle;
 
-// TODO: Здесь могут быть объявлены другие общие ресурсы (семафоры, мьютексы и т.д.)
+// Объявление семафоров
+
+// extern osSemaphoreId_t usb_tx_semHandle;
 
 
 
