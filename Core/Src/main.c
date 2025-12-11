@@ -217,7 +217,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of task_can_handle */
- // task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
+ task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
 
   /* creation of task_usb_handle */
   task_usb_handleHandle = osThreadNew(start_task_usb_handler, NULL, &task_usb_handle_attributes);
