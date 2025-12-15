@@ -32,6 +32,39 @@ void app_start_task_can_handler(void *argument)
 		while(1);
 		}
 
+
+	// >>> НАЧАЛО НОВОГО ТЕСТОВОГО КОДА ДЛЯ ДАТЧИКОВ ТЕМПЕРАТУРЫ <<<
+
+	{
+		osDelay(1000);
+
+		CanMessage_t test_msg;
+
+		// --- Заполняем заголовок (Header) ---
+		test_msg.Header.IdType = FDCAN_STANDARD_ID;
+		// Формируем ID: 0x100 | ID исполнителя=2 | ID датчика=0
+		test_msg.Header.Identifier = 0x100 | (2 << 4) | 0;
+		test_msg.Header.TxFrameType = FDCAN_DATA_FRAME;
+		test_msg.Header.DataLength = FDCAN_DLC_BYTES_5; // 1 байт команда + 4 байта payload (индекс датчика)
+		// --- Заполняем данные (Data) ---
+		test_msg.Data[0] = CMD_GET_TEMPERATURE;
+		// В payload передаем индекс датчика, который нас интересует (в данном случае, датчик 0)
+		test_msg.Data[1] = 0; // Индекс 0
+		test_msg.Data[2] = 0;
+		test_msg.Data[3] = 0;
+		test_msg.Data[4] = 0;
+		// --- Отправляем сообщение в очередь ---
+		if (can_tx_queue_handle != NULL)
+			{
+			xQueueSend(can_tx_queue_handle, &test_msg, 0);
+			}
+		}
+	// <<< КОНЕЦ НОВОГО ТЕСТОВОГО КОДА >>>
+
+
+
+/*
+
 	// --- 2. ВРЕМЕННЫЙ КОД ДЛЯ ТЕСТИРОВАНИЯ ИСПОЛНИТЕЛЯ НАСОСОВ И КЛАПАНОВ ---
 
 	{
@@ -62,6 +95,12 @@ void app_start_task_can_handler(void *argument)
 		}
 
 	// --- КОНЕЦ ВРЕМЕННОГО КОДА ДЛЯ ТЕСТА ---
+
+*
+*
+*
+*/
+
 
 
 

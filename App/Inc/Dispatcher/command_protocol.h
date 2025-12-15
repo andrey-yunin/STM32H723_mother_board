@@ -24,6 +24,7 @@ typedef enum {
 	CMD_PERFORMER_ID_SET    = 0x09, // Команда для установки ID исполнителя
 	CMD_SET_PUMP_STATE      = 0x10, // Установить состояние насоса (вкл/выкл)
 	CMD_SET_VALVE_STATE     = 0x11, // Установить состояние клапана (откр/закр)
+	CMD_GET_TEMPERATURE     = 0x12, // Запросить температуру с датчика
 	} CommandID_t;
 
 #endif /* INC_DISPATCHER_COMMAND_PROTOCOL_H_ */
