@@ -22,6 +22,8 @@ typedef enum {
 	CMD_SET_CURRENT         = 0x07, // Установить рабочий ток
 	CMD_ENABLE_MOTOR        = 0x08, // Включить/выключить драйвер
 	CMD_PERFORMER_ID_SET    = 0x09, // Команда для установки ID исполнителя
+	CMD_SET_PUMP_STATE      = 0x10, // Установить состояние насоса (вкл/выкл)
+	CMD_SET_VALVE_STATE     = 0x11, // Установить состояние клапана (откр/закр)
 	} CommandID_t;
 
 #endif /* INC_DISPATCHER_COMMAND_PROTOCOL_H_ */

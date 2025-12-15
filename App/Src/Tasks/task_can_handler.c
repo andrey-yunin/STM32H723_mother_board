@@ -31,7 +31,43 @@ void app_start_task_can_handler(void *argument)
 		{
 		while(1);
 		}
-	// --- 2. ВРЕМЕННЫЙ КОД ДЛЯ ПЕРВОГО ФИЗИЧЕСКОГО ТЕСТА ---
+
+	// --- 2. ВРЕМЕННЫЙ КОД ДЛЯ ТЕСТИРОВАНИЯ ИСПОЛНИТЕЛЯ НАСОСОВ И КЛАПАНОВ ---
+
+	{
+		osDelay(1000); // Немного увеличим задержку для надежности
+
+		CanMessage_t test_msg;
+
+		// --- Заполняем заголовок (Header) ---
+		test_msg.Header.IdType = FDCAN_STANDARD_ID;
+
+		// Формируем ID: 0x100 | ID исполнителя=1 | ID насоса=0 (PUMP_1)
+		test_msg.Header.Identifier = 0x100 | (1 << 4) | 0;
+		test_msg.Header.TxFrameType = FDCAN_DATA_FRAME;
+		test_msg.Header.DataLength = FDCAN_DLC_BYTES_5; // 1 байт команда + 4 байта payload
+		// --- Заполняем данные (Data) ---
+		// Байт 0: Наша команда.
+		test_msg.Data[0] = CMD_SET_PUMP_STATE;
+		// Байты 1-4: Наш payload. Отправляем "1", что означает "включить".
+		test_msg.Data[1] = 1;
+		test_msg.Data[2] = 0;
+		test_msg.Data[3] = 0;
+		test_msg.Data[4] = 0;
+		// --- Отправляем сообщение в очередь ---
+		if (can_tx_queue_handle != NULL)
+			{
+			xQueueSend(can_tx_queue_handle, &test_msg, 0);
+			}
+		}
+
+	// --- КОНЕЦ ВРЕМЕННОГО КОДА ДЛЯ ТЕСТА ---
+
+
+
+
+	/*
+	// --- 2. ВРЕМЕННЫЙ КОД ДЛЯ ПЕРВОГО ФИЗИЧЕСКОГО ТЕСТА ШАГОВЫХ ДВИГАТЕЛЕЙ---
 	// Этот блок выполнится один раз при старте задачи.
 	// Мы создаем и отправляем команду CMD_ENABLE_MOTOR, чтобы проверить всю цепочку связи.
 	{
@@ -82,6 +118,9 @@ void app_start_task_can_handler(void *argument)
 
 	 }
 	// --- КОНЕЦ ВРЕМЕННОГО КОДА ДЛЯ ТЕСТА ---
+	 *
+	 *
+	 */
 	// --- 3. Основной цикл задачи ---
 	// Этот цикл будет вечно работать, обрабатывая исходящие CAN-сообщения.
 
