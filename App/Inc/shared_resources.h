@@ -22,7 +22,7 @@ extern QueueHandle_t log_queue_handle;
 
 // Объявление семафоров
 
-// extern osSemaphoreId_t usb_tx_semHandle;
+extern osSemaphoreId_t usb_tx_semHandle;
 
 
 

@@ -32,11 +32,11 @@ def main():
         # --- Создаем блок команд для отправки ---
         commands_to_send = [
             "CMD_ASPIRATE 1"
-            #"CMD_GET_STATUS",
-            #"CMD_START_MOTOR_1",
-            #"CMD_READ_SENSOR_3",
-            #"CMD_SET_POWER_LEVEL_85",
-            #"CMD_PERFORM_DIAGNOSTICS"
+            "CMD_GET_STATUS",
+            "CMD_START_MOTOR_1",
+            "CMD_READ_SENSOR_3",
+            "CMD_SET_POWER_LEVEL_85",
+            "CMD_PERFORM_DIAGNOSTICS"
             ]
         time.sleep(1)
 

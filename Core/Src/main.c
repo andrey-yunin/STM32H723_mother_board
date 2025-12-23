@@ -66,14 +66,14 @@ const osThreadAttr_t task_can_handle_attributes = {
 osThreadId_t task_usb_handleHandle;
 const osThreadAttr_t task_usb_handle_attributes = {
   .name = "task_usb_handle",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityHigh2,
 };
 /* Definitions for task_dispatcher */
 osThreadId_t task_dispatcherHandle;
 const osThreadAttr_t task_dispatcher_attributes = {
   .name = "task_dispatcher",
-  .stack_size = 512 * 4,
+  .stack_size = 2048 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal,
 };
 /* Definitions for task_watchdog */
@@ -169,8 +169,7 @@ int main(void)
   MX_GPIO_Init();
   MX_FDCAN1_Init();
   /* USER CODE BEGIN 2 */
-  /* init code for USB_DEVICE */
-  MX_USB_DEVICE_Init();
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -182,7 +181,7 @@ int main(void)
 
   /* Create the semaphores(s) */
   /* creation of usb_tx_sem */
- // usb_tx_semHandle = osSemaphoreNew(1, 1, &usb_tx_sem_attributes);
+  usb_tx_semHandle = osSemaphoreNew(1, 1, &usb_tx_sem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -217,7 +216,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of task_can_handle */
- task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
+  task_can_handleHandle = osThreadNew(start_task_can_handler, NULL, &task_can_handle_attributes);
 
   /* creation of task_usb_handle */
   task_usb_handleHandle = osThreadNew(start_task_usb_handler, NULL, &task_usb_handle_attributes);
@@ -226,13 +225,13 @@ int main(void)
   task_dispatcherHandle = osThreadNew(start_task_dispatcher, NULL, &task_dispatcher_attributes);
 
   /* creation of task_watchdog */
-  //task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
+  task_watchdogHandle = osThreadNew(start_task_watchdog, NULL, &task_watchdog_attributes);
 
   /* creation of task_jobs_monit */
   task_jobs_monitHandle = osThreadNew(start_task_jobs_monitor, NULL, &task_jobs_monit_attributes);
 
   /* creation of task_logger */
-  //task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
+  task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -416,6 +415,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_start_task_can_handler */
 void start_task_can_handler(void *argument)
 {
+  /* init code for USB_DEVICE */
+ // MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 5 */
 app_start_task_can_handler(argument);
   /* Infinite loop */
@@ -512,7 +513,7 @@ void start_task_jobs_monitor(void *argument)
 * @brief Function implementing the task_logger thread.
 * @param argument: Not used
 * @retval None
-*/
+*///HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 /* USER CODE END Header_start_task_logger */
 void start_task_logger(void *argument)
 {

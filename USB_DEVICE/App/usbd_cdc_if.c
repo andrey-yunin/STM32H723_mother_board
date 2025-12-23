@@ -260,7 +260,7 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 /**
   * @brief Data received over USB OUT endpoint are sent over CDC interface
   *         through this function.
-  *osSemaphoreId_t
+  *
   *         @note
   *         This function will issue a NAK packet on any OUT packet received on
   *         USB endpoint until exiting this function. If you exit this function
@@ -332,16 +332,23 @@ static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
   */
 uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len)
 {
-  uint8_t result = USBD_OK;
-  /* USER CODE BEGIN 12 */
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceHS.pClassData;
-  if (hcdc->TxState != 0){
-    return USBD_BUSY;
-  }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceHS, Buf, Len);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceHS);
-  /* USER CODE END 12 */
-  return result;
+	uint8_t result = USBD_OK;
+	/* USER CODE BEGIN 12 */
+	USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceHS.pClassData;
+	if (hcdc->TxState != 0){
+		return USBD_BUSY;
+		}
+	// Копируем данные из буфера задачи в наш внутренний, безопасный буфер UserTxBufferHS
+	// Это защищает нас от ситуации, когда задача перезаписывает свой буфер до завершения передачи.
+	if (Len > APP_TX_DATA_SIZE) {
+		Len = APP_TX_DATA_SIZE; // Убедимся, что не выходим за пределы нашего буфера
+		}
+	memcpy(UserTxBufferHS, Buf, Len);
+	// Указываем USB-драйверу использовать НАШ безопасный буфер для передачи
+	USBD_CDC_SetTxBuffer(&hUsbDeviceHS, UserTxBufferHS, Len);
+	result = USBD_CDC_TransmitPacket(&hUsbDeviceHS);
+	/* USER CODE END 12 */
+	return result;
 }
 
 /**
@@ -364,13 +371,14 @@ static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Len);
   UNUSED(epnum);
 
-//HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+  // >>> ПЯТЬ МИГОВ:
+//for(int i=0; i<10; i++) { HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin); osDelay(50); }
 
-// Передача по USB физически завершена! "Поднимаем" семафор.
-//osSemaphoreRelease(usb_tx_semHandle);
+//Передача по USB физически завершена! "Поднимаем" семафор.
+osSemaphoreRelease(usb_tx_semHandle);
 
 
-/* USER CODE END 14 */
+  /* USER CODE END 14 */
   return result;
 }
 
