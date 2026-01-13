@@ -158,3 +158,91 @@ static CommandStatus_t process_args_aspirate(const char *args, ParsedCommand_t *
 		return CMD_ERROR; // Не удалось запустить
 
 	return CMD_OK; }
+
+
+// Вспомогательная функция для расчета CRC (дублируется для локального использования)
+static uint8_t calculate_crc_parser(const uint8_t* data, uint16_t length)
+{
+	uint8_t crc = 0;
+	for (uint16_t i = 0; i < length; i++) {
+		crc ^= data[i];
+		}
+	return crc;
+	}
+
+void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
+{
+	// --- 1. Проверка базовой длины пакета ---
+	// Минимальный пакет: Header(3) + Length(2) + Cmd(2) + CRC(1) = 8 байт
+	if (len < 8) {
+		// Пакет слишком короткий, игнорируем
+		return;
+		}
+
+	// --- 2. Извлечение полей ---
+	// Длина поля данных (включая команду, параметры и CRC)
+	uint16_t payload_len = (uint16_t)(packet[3] << 8) | packet[4];
+	// Код команды
+	uint16_t command_code = (uint16_t)(packet[5] << 8) | packet[6];
+
+	// Длина всего пакета (заголовок + длина + полезная нагрузка)
+	uint16_t total_packet_len = 3 + 2 + payload_len;
+
+	if (total_packet_len != len) {
+		// Фактическая длина пакета не совпадает с заявленной, ошибка
+		// В будущем можно отправлять NACK
+		return;
+		}
+
+	// --- 3. Проверка CRC ---
+	// CRC рассчитывается по полям: Команда + Параметры
+	// Эти данные начинаются с 5-го индекса, их длина = payload_len - 1 (минус байт CRC)
+
+	uint16_t crc_data_len = payload_len - 1;
+	uint8_t calculated_crc = calculate_crc_parser(&packet[5], crc_data_len);
+
+	// Полученный CRC - это последний байт пакета
+	uint8_t received_crc = packet[len - 1];
+	if (calculated_crc != received_crc) {
+		// Ошибка CRC! Отправляем NACK
+		// Код ошибки 0x0002 зарезервируем для CRC_ERROR
+		Dispatcher_SendNack(command_code, 0x0002);
+		return;
+		}
+
+	// --- 4. CRC верен, отправляем ACK ---
+	Dispatcher_SendAck(command_code);
+
+	// --- 5. Обработка команды ---
+	// (Этот блок будет расширяться для запуска заданий)
+
+	switch (command_code)
+	{
+		case 0x1002: // INIT
+			// Здесь в будущем будет логика запуска инициализации через JobManager
+			// ParsedCommand_t init_cmd = ...;
+			// JobManager_StartNewJob(&init_cmd);
+			break;
+
+		// Другие case для других команд...
+		 default:
+			 // Неизвестная команда, но синтаксически верная.
+	         // Можно отправить NACK с кодом "неизвестная команда".
+			 break;
+		}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -11,14 +11,18 @@
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "cmsis_os.h"
+#include "stream_buffer.h" // <-- ДОБАВЛЕНО: для типа StreamBufferHandle_t
 
 
 // Объявления очередей
-extern QueueHandle_t usb_rx_queue_handle;
+// extern QueueHandle_t usb_rx_queue_handle;
 extern QueueHandle_t usb_tx_queue_handle;
 extern QueueHandle_t can_rx_queue_handle;
 extern QueueHandle_t can_tx_queue_handle;
 extern QueueHandle_t log_queue_handle;
+
+// Объявление буфера потока для бинарных данных USB
+extern StreamBufferHandle_t usb_rx_stream_buffer_handle;
 
 // Объявление семафоров
 

@@ -37,10 +37,6 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-// Static buffer to assemble commands line-by-line
-static char g_line_buffer[APP_USB_CMD_MAX_LEN];
- // Current write index for the line buffer
-static uint32_t g_line_buffer_idx = 0;
 
 
 /* USER CODE END PV */
@@ -275,50 +271,42 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
+
+	 // Эта функция вызывается из прерывания каждый раз, когда от хоста (ПК)
+	 // приходит новый пакет данных по USB.
+
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-   // Process each received character one by one
-   for (uint32_t i = 0; i < *Len; i++)
-   {
-       char received_char = Buf[i];
+	// Проверяем, что буфер и его длина корректны
+	if ((Buf != NULL) && (Len != NULL) && (*Len > 0))
+		{
+		// Отправляем полученный блок данных (Buf) длиной (*Len)
+		// в наш новый буфер потока.
+		// Функция xStreamBufferSendFromISR безопасна для вызова из прерываний.
+		size_t bytes_sent = xStreamBufferSendFromISR(
+				usb_rx_stream_buffer_handle,
+				(void *)Buf,
+				*Len,
+				&xHigherPriorityTaskWoken
+				);
 
-       // Check for newline character, indicating end of a command
-       if (received_char == '\n' || received_char == '\r')
-       {
-           // Only process if the line buffer is not empty
-           if (g_line_buffer_idx > 0)
-           {
-               // Null-terminate the string in our line buffer
-               g_line_buffer[g_line_buffer_idx] = '\0';
+		// (Опционально) Можно добавить проверку, что все байты были отправлены,
+		// но для простоты мы предполагаем, что буфер всегда сможет их принять.
+		(void)bytes_sent; // Подавляем предупреждение "unused variable"
+		}
 
-               // Send the completed command line to the dispatcher task
-               xQueueSendFromISR(usb_rx_queue_handle, (void *)g_line_buffer, &xHigherPriorityTaskWoken);
+	// Снова готовим USB-приемник к приему следующего пакета данных.
+	// Это критически важно, иначе прием прекратится.
 
-               // Reset the buffer index to start collecting the next command
-               g_line_buffer_idx = 0;
-           }
-           // If the buffer is empty, we just ignore the newline
-       }
-       else
-       {
-           // Add the character to the line buffer if there's space
-           if (g_line_buffer_idx < APP_USB_CMD_MAX_LEN - 1)
-           {
-               g_line_buffer[g_line_buffer_idx++] = received_char;
-           }
-           // else: character is dropped because the buffer is full (prevents overflow)
-       }
-   }
+	USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+	USBD_CDC_ReceivePacket(&hUsbDeviceHS);
 
-   // Re-arm the USB endpoint to be ready for the next packet
-   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
-   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+	// Если отправка в буфер разбудила более приоритетную задачу,
+	// то мы уступаем ей процессорное время.
 
-   // If a task was woken, yield to it.
-   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-   return (USBD_OK);
+	portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 
-
+	return (USBD_OK);
 
   /* USER CODE END 11 */
 }

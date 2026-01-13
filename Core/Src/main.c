@@ -110,6 +110,7 @@ QueueHandle_t can_rx_queue_handle;
 QueueHandle_t can_tx_queue_handle;
 QueueHandle_t log_queue_handle;
 
+StreamBufferHandle_t usb_rx_stream_buffer_handle; // <-- ДОБАВЛЕНО
 
 
 /* USER CODE END PV */
@@ -210,6 +211,11 @@ int main(void)
 
 // Вызываем функцию проверки всех очередей
  //app_init_checker_verifyqueues();
+
+/* Cоздаем Stream Buffer для бинарных данных USB */
+// Размер буфера 1024 байта, задача будет разблокирована при поступлении хотя бы 1 байта
+  usb_rx_stream_buffer_handle = xStreamBufferCreate(1024, 1); // <-- ДОБАВЛЕНО
+
 
 
   /* USER CODE END RTOS_QUEUES */

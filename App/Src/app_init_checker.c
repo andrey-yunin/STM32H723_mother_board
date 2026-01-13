@@ -18,8 +18,8 @@
    */
  void app_init_checker_verifyqueues(void)
  {
-     if (usb_rx_queue_handle == NULL || // Можно было бы отправить в логгер сообщение об ошибке, но так как логгер еще не гарантированно работает, сразу вызываем Error_Handler
-         usb_tx_queue_handle == NULL ||
+     if (usb_rx_stream_buffer_handle == NULL || // Можно было бы отправить в логгер сообщение об ошибке, но так как логгер еще не гарантированно работает, сразу вызываем Error_Handler
+    	 usb_rx_stream_buffer_handle == NULL ||
          log_queue_handle == NULL)
      {
     	 Error_Handler();

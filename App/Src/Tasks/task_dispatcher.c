@@ -30,50 +30,123 @@ static SystemState_t g_system_state = SYS_STATE_POWER_ON;
 
 void app_start_task_dispatcher(void *argument)
 {
-	char rx_buffer[APP_USB_CMD_MAX_LEN];
+	// Буфер для сборки одного полного пакета команды
+	static uint8_t packet_buffer[APP_USB_CMD_MAX_LEN];
+	// Переменные для машины состояний парсера
+	uint32_t bytes_to_read = 0;
+	uint32_t buffer_idx = 0;
 
-    // --- АВТОМАТИЧЕСКИЙ ЗАПУСК ИНИЦИАЛИЗАЦИИ ---
-    if (g_system_state == SYS_STATE_POWER_ON)
-    	{
-    	g_system_state = SYS_STATE_INITIALIZING;
-        Dispatcher_SendUsbResponse("INFO: System starting. Initializing hardware...");
-        // Запускаем настоящее задание инициализации через JobManager
-        ParsedCommand_t init_cmd = {.recipe_id = RECIPE_INITIALIZE_SYSTEM};
-        init_cmd.args_buffer[0] = '\0';
-        uint32_t init_job_id = JobManager_StartNewJob(&init_cmd);
+	typedef enum {
+		PARSER_STATE_WAIT_HEADER_1, // Ожидание первого байта 'C'
+		PARSER_STATE_WAIT_HEADER_2, // Ожидание второго байта 'M'
+		PARSER_STATE_WAIT_HEADER_3, // Ожидание третьего байта '>'
+		PARSER_STATE_READ_LEN_1,    // Чтение старшего байта длины
+		PARSER_STATE_READ_LEN_2,    // Чтение младшего байта длины
+		PARSER_STATE_READ_PAYLOAD   // Чтение тела пакета (Команда + Параметры + CRC)
+		} ParserState_t;
 
-        if (init_job_id == 0) {
-        	Dispatcher_SendUsbResponse("CRITICAL ERROR: Failed to start system initialization job!");
-            g_system_state = SYS_STATE_ERROR;
-                     }
-            // Теперь мы не симулируем завершение, а ждем, пока JobManager его обработает.
-            // JobManager должен будет изменить g_system_state на SYS_STATE_READY.
-            // Пока мы не реализовали этот механизм обратной связи, система останется в состоянии INITIALIZING.
-            // Чтобы протестировать, давайте временно установим его вручную после небольшой задержки.
-            osDelay(100); // Даем время job_manager'у запустить задание
-            // g_system_state = SYS_STATE_READY; // Эту строку нужно будет убрать в будущем
-        }
+		ParserState_t parser_state = PARSER_STATE_WAIT_HEADER_1;
 
+		// --- Логика инициализации системы остается без изменений ---
+		if (g_system_state == SYS_STATE_POWER_ON)
+			{
+			g_system_state = SYS_STATE_INITIALIZING;
+			Dispatcher_SendUsbResponse("INFO: System starting. Initializing hardware...");
+			ParsedCommand_t init_cmd = {.recipe_id = RECIPE_INITIALIZE_SYSTEM};
+			init_cmd.args_buffer[0] = '\0';
+			uint32_t init_job_id = JobManager_StartNewJob(&init_cmd);
 
-       for(;;)
-    	   {
-    	   // Ждем команду из очереди usb_rx_queue
-    	   if (xQueueReceive(usb_rx_queue_handle, (void *)rx_buffer, portMAX_DELAY) == pdPASS)
-    		   {
-    		   // Обрабатываем команды только если система готова
-               // Временно разрешим команды даже во время инициализации для теста
-    		   if (g_system_state == SYS_STATE_READY || g_system_state == SYS_STATE_INITIALIZING)
-    			   {
-    			   // Передаем команду в наш модульный обработчик
-    			   Parser_ProcessCommand(rx_buffer);
-    			   }
-    		   else
-    			   {
-    			   Dispatcher_SendUsbResponse("ERROR: System is in an error or busy state. Commands not accepted.");
-    			   }
-                }
-            }
+			if (init_job_id == 0) {
+				Dispatcher_SendUsbResponse("CRITICAL ERROR: Failed to start system initialization job!");
+				g_system_state = SYS_STATE_ERROR;
+				}
+			osDelay(100);
+			}
+
+	// --- НОВЫЙ ГЛАВНЫЙ ЦИКЛ ЗАДАЧИ ---
+	for(;;)
+		{
+		// Пытаемся прочитать 1 байт из буфера потока.
+		// Блокируемся на время portMAX_DELAY, если данных нет.
+		uint8_t current_byte;
+		size_t bytes_read = xStreamBufferReceive(usb_rx_stream_buffer_handle,
+				(void*)&current_byte, 1, portMAX_DELAY);
+
+		if (bytes_read > 0)
+			{
+				switch (parser_state)
+				{
+					case PARSER_STATE_WAIT_HEADER_1:
+						if (current_byte == 0x43) { // 'C'
+							packet_buffer[0] = current_byte;
+							parser_state = PARSER_STATE_WAIT_HEADER_2;
+							}
+						break;
+
+					case PARSER_STATE_WAIT_HEADER_2:
+						if (current_byte == 0x4D) { // 'M'
+							packet_buffer[1] = current_byte;
+							parser_state = PARSER_STATE_WAIT_HEADER_3;
+							}
+						else {
+							parser_state = PARSER_STATE_WAIT_HEADER_1; // Ошибка, начинаем сначала
+							}
+						break;
+
+					case PARSER_STATE_WAIT_HEADER_3:
+						if (current_byte == 0x3E) { // '>'
+							packet_buffer[2] = current_byte;
+							parser_state = PARSER_STATE_READ_LEN_1;
+							}
+						else {
+							parser_state = PARSER_STATE_WAIT_HEADER_1; // Ошибка, начинаем сначала
+							}
+						break;
+
+					case PARSER_STATE_READ_LEN_1:
+						packet_buffer[3] = current_byte;
+						bytes_to_read = (uint32_t)current_byte << 8; // Старший байт
+						parser_state = PARSER_STATE_READ_LEN_2;
+						break;
+
+					case PARSER_STATE_READ_LEN_2:
+						packet_buffer[4] = current_byte;
+						bytes_to_read |= current_byte; // Младший байт
+
+						// Проверка на максимальную длину пакета
+						if (bytes_to_read > 0 && (bytes_to_read + 5) <= APP_USB_CMD_MAX_LEN) {
+							buffer_idx = 5; // Начинаем запись с 5-го индекса
+							parser_state = PARSER_STATE_READ_PAYLOAD;
+							}
+						else {
+							parser_state = PARSER_STATE_WAIT_HEADER_1; // Неверная длина, сброс
+							}
+						break;
+
+					case PARSER_STATE_READ_PAYLOAD:
+						packet_buffer[buffer_idx++] = current_byte;
+						bytes_to_read--;
+						if (bytes_to_read == 0)
+							{
+							// Пакет собран!
+							if (g_system_state == SYS_STATE_READY || g_system_state == SYS_STATE_INITIALIZING)
+							{
+								// Передаем собранный бинарный пакет в обработчик
+								// (эту функцию мы создадим на следующем шаге)
+								Parser_ProcessBinaryCommand(packet_buffer, buffer_idx);
+								}
+							else {
+								Dispatcher_SendUsbResponse("ERROR: System is not ready for binary commands.");
+								}
+							// Сброс состояния для ожидания нового пакета
+							parser_state = PARSER_STATE_WAIT_HEADER_1;
+							}
+						break;
+						}
+				}
+		}
 }
+
 
 // Эта функция будет вызываться из JobManager'а, когда инициализация завершена.
 // Для этого нам понадобится механизм межзадачного взаимодействия (например, Event Group).

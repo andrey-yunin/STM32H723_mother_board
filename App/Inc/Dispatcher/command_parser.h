@@ -41,6 +41,16 @@
   */
  void Parser_ProcessCommand(char *command_line);
 
+ /**
+  * @brief Новая функция для обработки бинарных пакетов.
+  *        Принимает сырой бинарный пакет, проверяет его и инициирует выполнение.
+  *
+  * @param packet Указатель на буфер с полным пакетом (включая заголовок).
+  * @param len    Общая длина пакета в буфере.
+  */
+void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+
+
 
 
 #endif /* INC_DISPATCHER_COMMAND_PARSER_H_ */
