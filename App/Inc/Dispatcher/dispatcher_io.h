@@ -9,6 +9,18 @@
 #define INC_DISPATCHER_DISPATCHER_IO_H_
 
 #include <stdint.h> // Для uint8_t, uint16_t
+#include "app_config.h"
+
+/**
+ * @brief Структура для отправки данных в задачу USB_TX.
+ *        Позволяет передавать как бинарные пакеты, так и текстовые строки.
+ */
+typedef struct {
+	uint8_t data[APP_USB_RESP_MAX_LEN];
+	uint16_t length;
+	} USB_TxPacket_t;
+
+
 
 /**
 * @brief Отправляет строку-ответ в очередь на передачу по USB.

@@ -23,6 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "Dispatcher/dispatcher_io.h"
 #include "task_dispatcher.h"
 #include "task_can_handler.h"
 #include "task_usb_handler.h"
@@ -195,7 +196,9 @@ int main(void)
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   usb_rx_queue_handle = xQueueCreate(APP_USB_RX_QUEUE_LENGTH, APP_USB_CMD_MAX_LEN); // 10 команд, каждая до 256 байт
-  usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, APP_USB_RESP_MAX_LEN); // 10 ответов, каждая до 256 байт (пока)
+  //usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, APP_USB_RESP_MAX_LEN); // 10 ответов, каждая до 256 байт (пока)
+  usb_tx_queue_handle = xQueueCreate(APP_USB_TX_QUEUE_LENGTH, sizeof(USB_TxPacket_t));
+
 
 // Для CAN передаются структурированные сообщения.
 // Пока что представим, что это будет 8-байтный массив (payload CAN-сообщения).
