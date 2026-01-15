@@ -37,16 +37,14 @@ typedef struct {
     uint8_t current_step_index;
     uint8_t pending_actions_count;
     uint32_t step_start_time_ms;
-    ParsedCommand_t initial_cmd;
+    UniversalCommand_t initial_cmd;
 } JobContext_t;
 
 // --- API модуля Job Manager ---
 
 void JobManager_Init(void);
 
-void JobManager_Init(void);
-
-uint32_t JobManager_StartNewJob(const ParsedCommand_t* parsed_cmd);
+uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd);
 
 bool JobManager_ProcessExecutorResponse(uint32_t job_id, uint8_t executor_id, bool action_status_ok);
 

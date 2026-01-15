@@ -78,6 +78,66 @@ void Dispatcher_SendNack(uint16_t command_code, uint16_t error_code)
 	send_packet_to_queue(nack_packet, sizeof(nack_packet), false);
 }
 
+void Dispatcher_SendDone(uint16_t command_code, uint16_t status)
+{
+	// Структура идентична ACK/NACK
+	uint8_t done_packet[11];
+
+	// 1. Header
+	done_packet[0] = 0x43; done_packet[1] = 0x4D; done_packet[2] = 0x3E;
+
+	// 2. Length (Cmd + Type + Status + CRC = 6 байт)
+	done_packet[3] = 0x00; done_packet[4] = 0x06;
+
+	// 3. Command Code
+	done_packet[5] = (command_code >> 8) & 0xFF;
+	done_packet[6] = command_code & 0xFF;
+
+	// 4. Response Type (0x02 = DONE)
+	done_packet[7] = 0x02;
+
+	// 5. Status (0x0000 = OK, но могут быть и другие коды успеха)
+	done_packet[8] = (status >> 8) & 0xFF;
+	done_packet[9] = status & 0xFF;
+
+	// 6. CRC
+	done_packet[10] = calculate_crc(&done_packet[5], 5);
+	send_packet_to_queue(done_packet, sizeof(done_packet), false);
+	}
+
+void Dispatcher_SendError(uint16_t command_code, uint16_t error_code)
+{
+	// Эта функция будет дублировать NACK, но с типом ответа "ERROR" (0x04).
+	// По протоколу, NACK и ERROR могут иметь разный семантический смысл:
+	// NACK - ошибка в самом пакете (CRC, неверный формат).
+	// ERROR - ошибка выполнения самой команды на уровне логики.
+
+	uint8_t error_packet[11];
+
+	// 1. Header
+	error_packet[0] = 0x43; error_packet[1] = 0x4D; error_packet[2] = 0x3E;
+
+	// 2. Length
+	error_packet[3] = 0x00; error_packet[4] = 0x06;
+
+	// 3. Command Code
+	error_packet[5] = (command_code >> 8) & 0xFF;
+	error_packet[6] = command_code & 0xFF;
+
+	// 4. Response Type (0x04 = ERROR)
+	error_packet[7] = 0x04;
+
+	// 5. Status (Код ошибки из errors.md)
+	error_packet[8] = (error_code >> 8) & 0xFF;
+	error_packet[9] = error_code & 0xFF;
+
+	// 6. CRC
+	error_packet[10] = calculate_crc(&error_packet[5], 5);
+	send_packet_to_queue(error_packet, sizeof(error_packet), false);
+
+}
+
+
 
 
 

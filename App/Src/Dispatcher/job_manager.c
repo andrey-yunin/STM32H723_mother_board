@@ -43,10 +43,10 @@ void JobManager_Init(void)
 
 /**
 * @brief Запускает новое задание.
-* @param parsed_cmd Разобранная команда.
+* @param parsed_cmd Указатель на универсальную структуру команды.
 * @return ID запущенного задания или 0 в случае ошибки (например, нет свободных слотов).
 */
-uint32_t JobManager_StartNewJob(const ParsedCommand_t* parsed_cmd)
+uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd) // <-- ИЗМЕНЕНО
 {
 	JobContext_t* job = JobManager_FindFreeSlot();
     if (job == NULL) {
@@ -71,7 +71,7 @@ uint32_t JobManager_StartNewJob(const ParsedCommand_t* parsed_cmd)
     job->step_start_time_ms = HAL_GetTick(); // Начало первого шага
 
     // Сохраняем оригинальную команду для контекста/логгирования
-    job->initial_cmd = *parsed_cmd;
+    job->initial_cmd = *parsed_cmd; // <-- ИЗМЕНЕНО
 
     char ack_msg[APP_USB_RESP_MAX_LEN];
     snprintf(ack_msg, sizeof(ack_msg), "INFO: Job #%lu started (Recipe ID:%d).", job->job_id, job->initial_recipe_id);

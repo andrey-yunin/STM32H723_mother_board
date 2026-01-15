@@ -52,8 +52,11 @@ void app_start_task_dispatcher(void *argument)
 			{
 			g_system_state = SYS_STATE_INITIALIZING;
 			Dispatcher_SendUsbResponse("INFO: System starting. Initializing hardware...");
-			ParsedCommand_t init_cmd = {.recipe_id = RECIPE_INITIALIZE_SYSTEM};
-			init_cmd.args_buffer[0] = '\0';
+			// Создаем универсальную команду для инициализации
+			UniversalCommand_t init_cmd;
+			init_cmd.recipe_id = RECIPE_INITIALIZE_SYSTEM;
+			init_cmd.args_type = ARGS_TYPE_NONE; // Инициализация не требует аргументов
+
 			uint32_t init_job_id = JobManager_StartNewJob(&init_cmd);
 
 			if (init_job_id == 0) {

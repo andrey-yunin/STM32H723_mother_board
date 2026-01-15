@@ -24,6 +24,10 @@
 #define APP_MAX_ACTIVE_JOBS            5    // Максимальное количество одновременно активных "проектов"
 #define APP_JOB_TIMEOUT_MS             5000 // Тайм-аут для шага "проекта" в миллисекундах (5 секунд)
 
+// Максимальный размер бинарных параметров для одной команды
+#define MAX_BINARY_ARGS_SIZE 64
+
+
 // --- Task Stack Sizes (in words, CubeMX генерирует * 4 байта) ---
 // Эти значения задаются в CubeMX, но могут быть переопределены или использованы здесь для ясности
 // osThreadAttr_t task_can_handle_attributes = { .stack_size = 256 * 4, ... };

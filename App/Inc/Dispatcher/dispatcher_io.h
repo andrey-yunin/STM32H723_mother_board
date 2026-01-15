@@ -45,4 +45,19 @@ void Dispatcher_SendAck(uint16_t command_code);
  */
 void Dispatcher_SendNack(uint16_t command_code, uint16_t error_code);
 
+/**
+ * @brief Отправляет стандартный бинарный DONE-ответ (команда выполнена).
+ * @param command_code Код команды, на которую отправляется ответ.
+ * @param status Статус выполнения команды (0x0000 = OK, другие коды для успеха).
+ */
+void Dispatcher_SendDone(uint16_t command_code, uint16_t status);
+
+/**
+ * @brief Отправляет стандартный бинарный ERROR-ответ (команда не выполнена из-за ошибки).
+ * @param command_code Код команды, на которую отправляется ответ.
+ * @param error_code Код ошибки (из errors.md).
+ */
+void Dispatcher_SendError(uint16_t command_code, uint16_t error_code);
+
+
 #endif /* INC_DISPATCHER_DISPATCHER_IO_H_ */
