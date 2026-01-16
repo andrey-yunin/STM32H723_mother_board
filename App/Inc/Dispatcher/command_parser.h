@@ -20,10 +20,12 @@
      RECIPE_START_MOTOR,
      RECIPE_HELP,
      RECIPE_ASPIRATE,
-     RECIPE_INITIALIZE_SYSTEM,
-     RECIPE_MAX_ID
- } RecipeID_t;
-
+         RECIPE_INITIALIZE_SYSTEM,
+         // --- [ADD_NEW_COMMAND] ---
+         // 1. Добавьте новый ID рецепта здесь
+         // Например: RECIPE_WASH_CUVETTE,
+         RECIPE_MAX_ID
+      } RecipeID_t;
 
  /**
   * @brief Структура для хранения бинарных аргументов.

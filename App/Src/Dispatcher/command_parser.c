@@ -192,6 +192,15 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
             }
             break;
 
+        // --- [ADD_NEW_COMMAND] ---
+        // 2. Добавьте новый `case` для вашей команды здесь
+        // case 0x4000: // WASH_CUVETTE
+        //     cmd.recipe_id = RECIPE_WASH_CUVETTE;
+        //     if (params_len != 1) {
+        //         Dispatcher_SendNack(command_code, 0x0003);
+        //         return;
+        //     }
+        //     break;
         default:
             Dispatcher_SendNack(command_code, 0x0001); // ERR_UNKNOWN_COMMAND
             return;

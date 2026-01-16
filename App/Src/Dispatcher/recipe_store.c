@@ -95,6 +95,9 @@
      { .atomic_actions = NULL, .num_actions = 0 }
  };
 
+// --- [ADD_NEW_COMMAND] ---
+// 3. Скопируйте существующий рецепт как шаблон и создайте здесь свой,
+//    например, g_recipe_wash_cuvette.
 
  // ============================================================================
  // ---                 API "Recipe store" (Оглавление)                   ---
@@ -112,6 +115,11 @@
 
         case RECIPE_ASPIRATE:
              return g_recipe_aspirate_reagent;
+
+        // --- [ADD_NEW_COMMAND] ---
+        // 4. Добавьте `case` для вашего нового рецепта здесь
+        // case RECIPE_WASH_CUVETTE:
+        //     return g_recipe_wash_cuvette;
 
         default:
              return NULL;
