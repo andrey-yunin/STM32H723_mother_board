@@ -10,6 +10,7 @@
 #include "Dispatcher/can_packer.h"
 #include "shared_resources.h"
 #include "app_config.h"
+#include "app_init_checker.h"
 #include <string.h>
 #include <stdio.h>
 #include "main.h" // Для HAL_GetTick()
@@ -44,9 +45,11 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
         return 0;
     }
 
-    job->job_id = g_next_job_id++;
+    // Сохраняем ID до того, как он может быть обнулен в JobManager_CompleteJob
+    const uint32_t new_job_id = g_next_job_id++;
     if (g_next_job_id == 0) g_next_job_id = 1;
 
+    job->job_id = new_job_id;
     job->status = JOB_STATUS_RUNNING;
     job->initial_recipe_id = parsed_cmd->recipe_id;
     job->current_recipe = Recipe_Get(parsed_cmd->recipe_id);
@@ -67,7 +70,9 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     Dispatcher_SendUsbResponse(ack_msg);
 
     JobManager_ExecuteStep(job);
-    return job->job_id;
+    
+    // Возвращаем сохраненный ID, так как job->job_id может быть уже равен 0
+    return new_job_id;
 }
 
 bool JobManager_ProcessExecutorResponse(uint32_t job_id, uint8_t executor_id, bool action_status_ok)
@@ -207,18 +212,21 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 Dispatcher_SendUsbResponse(info_msg);
                 Packer_CreateRotateMotorMsg(action->params.rotate_motor.motor_id, action->params.rotate_motor.steps, action->params.rotate_motor.speed, job->job_id, &can_msg);
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                job->pending_actions_count--; // Simulate response
                 break;
             case ACTION_START_PUMP:
                 snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id, action->params.pump.pump_id);
                 Dispatcher_SendUsbResponse(info_msg);
                 Packer_CreateStartPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                job->pending_actions_count--; // Simulate response
                 break;
             case ACTION_STOP_PUMP:
                 snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id, action->params.pump.pump_id);
                 Dispatcher_SendUsbResponse(info_msg);
                 Packer_CreateStopPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                job->pending_actions_count--; // Simulate response
                 break;
             case ACTION_HOME_MOTOR:
                 snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent HOME_MOTOR (ID:%u, Speed:%u) to Exec.",
@@ -226,6 +234,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 Dispatcher_SendUsbResponse(info_msg);
                 Packer_CreateHomeMotorMsg(action->params.home_motor.motor_id, action->params.home_motor.speed, job->job_id, &can_msg);
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
+                job->pending_actions_count--; // Simulate response
                 break;
             case ACTION_WAIT_MS:
                 snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id, (unsigned long)action->params.wait.delay_ms);
@@ -263,4 +272,5 @@ static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status)
 
 static void JobManager_SignalSystemReady(void) {
     Dispatcher_SendUsbResponse("DEBUG: Signaling system READY.");
+	SetSystemReady();
 }

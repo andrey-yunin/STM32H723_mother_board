@@ -3,6 +3,7 @@
 #include "job_manager.h"
 #include <string.h>
 #include <stdio.h>
+#include "cmsis_os.h" // Required for osDelay
 
 // === Локальные типы и прототипы ===
 
@@ -163,6 +164,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     }
 
     Dispatcher_SendAck(command_code);
+    osDelay(1); // Уступаем CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
 
     UniversalCommand_t cmd;
     cmd.recipe_id = RECIPE_NONE;

@@ -13,6 +13,7 @@
 
 // Прототипы функций
 void app_init_checker_verifyqueues(void);
+void SetSystemReady(void);
 // TODO: Здесь можно добавить прототипы для проверки других ресурсов
 
 

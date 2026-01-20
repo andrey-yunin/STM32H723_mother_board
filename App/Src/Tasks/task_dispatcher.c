@@ -9,6 +9,7 @@
 #include "cmsis_os.h"
 #include "shared_resources.h"
 #include "app_config.h"
+#include "app_init_checker.h"
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/job_manager.h"

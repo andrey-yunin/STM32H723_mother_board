@@ -3,7 +3,7 @@ import time
 import sys
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM1' 
+SERIAL_PORT = '/dev/ttyACM4' 
 BAUD_RATE = 9600
 
 def calculate_crc(data: bytes) -> int:
