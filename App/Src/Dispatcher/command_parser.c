@@ -4,6 +4,26 @@
 #include <string.h>
 #include <stdio.h>
 #include "cmsis_os.h" // Required for osDelay
+#include "direct_command_handlers.h"
+
+// Таблица дескрипторов для команд-рецептов
+const RecipeCommandDescriptor_t recipe_command_table[] = {
+		{.command_code = 0x1002, // Код команды INIT
+		 .min_params_len = 1,
+		 .max_params_len = 1,
+		 .recipe_id = RECIPE_INITIALIZE_SYSTEM // ID рецепта INIT
+		 },
+
+		 // Здесь будут добавляться другие команды-рецепты
+
+		 };
+
+// Определяем количество команд в таблице
+const uint16_t RECIPE_COMMAND_TABLE_SIZE = sizeof(recipe_command_table) / sizeof(RecipeCommandDescriptor_t);
+
+
+
+
 
 // === Локальные типы и прототипы ===
 
@@ -184,17 +204,47 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
         cmd.args.binary.len = 0;
     }
 
+
+
+    /*
+     *   * Мы добавляем цикл for, который итерирует по нашей новой таблице recipe_command_table.
+   * Для каждой записи мы сравниваем command_code из входящего пакета с command_code в дескрипторе.
+   * Если команда найдена:
+       * Мы присваиваем cmd.recipe_id из дескриптора.
+       * Выполняем проверку длины параметров, используя min_params_len и max_params_len из дескриптора. Если длина некорректна,
+         отправляем NACK и выходим.
+       * Запускаем JobManager_StartNewJob(&cmd).
+       * После успешного запуска или обработки ошибки, мы выходим из Parser_ProcessBinaryCommand, так как команда обработана.
+   * Если цикл завершился, и команда не была найдена в recipe_command_table, выполнение продолжится после этого блока, где пока еще
+     находится старый switch.
+     *
+     */
+
+    // Search for the command in the recipe command table
+    for (uint16_t i = 0; i < RECIPE_COMMAND_TABLE_SIZE; i++) {
+    	if (recipe_command_table[i].command_code == command_code) {
+    		// Command found in recipe table
+    		cmd.recipe_id = recipe_command_table[i].recipe_id;
+
+    		// Parameter length validation
+    		if (params_len < recipe_command_table[i].min_params_len ||
+    			params_len > recipe_command_table[i].max_params_len) {
+    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+    			return;
+    			}
+
+    		// Start JobManager to execute the recipe
+    		if (JobManager_StartNewJob(&cmd) == 0) {
+    			Dispatcher_SendError(command_code, 0x0004); // ERR_JOB_FAILED_TO_START
+    			}
+    		return; // Command processed, exit function
+    		}
+     }
+
+
     switch (command_code)
     {
-        case 0x1002: // INIT
-            cmd.recipe_id = RECIPE_INITIALIZE_SYSTEM;
-            if (params_len != 1) { // INIT expects exactly 1 byte parameter (modules_mask)
-                Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
-                return;
-            }
-            break;
-
-        // --- [ADD_NEW_COMMAND] ---
+               // --- [ADD_NEW_COMMAND] ---
         // 2. Добавьте новый `case` для вашей команды здесь
         // case 0x4000: // WASH_CUVETTE
         //     cmd.recipe_id = RECIPE_WASH_CUVETTE;

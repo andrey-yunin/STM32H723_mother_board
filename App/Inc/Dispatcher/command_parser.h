@@ -14,19 +14,47 @@
  /**
   * @brief "Внутренние имена" для всех команд-рецептов.
   */
- typedef enum {
-     RECIPE_NONE = 0,
-     RECIPE_GET_STATUS,
-     RECIPE_START_MOTOR,
-     RECIPE_HELP,
-     RECIPE_ASPIRATE,
-         RECIPE_INITIALIZE_SYSTEM,
-         // --- [ADD_NEW_COMMAND] ---
-         // 1. Добавьте новый ID рецепта здесь
-         // Например: RECIPE_WASH_CUVETTE,
-         RECIPE_MAX_ID
-      } RecipeID_t;
+typedef enum {
+	RECIPE_NONE = 0,
+    RECIPE_GET_STATUS,
+    RECIPE_START_MOTOR,
+    RECIPE_HELP,
+    RECIPE_ASPIRATE,
+    RECIPE_INITIALIZE_SYSTEM,
 
+	// --- [ADD_NEW_COMMAND] ---
+	// 1. Добавьте новый ID рецепта здесь
+	// Например: RECIPE_WASH_CUVETTE,
+	RECIPE_MAX_ID
+	} RecipeID_t;
+
+// Тип указателя на функцию для обработчиков прямых команд
+// Объявляется тип для указателя на функцию. Любая функция, которая соответствует этой "подписи"
+// принимает uint16_t, const uint8_t*, uint16_t и ничего не возвращает),
+// может быть использована как обработчик прямой команды.
+// Это позволяет нам вызывать разные функции из одного и того же места в коде.
+
+typedef void (*DirectCommandHandler_t)(uint16_t command_code, const uint8_t* params, uint16_t params_len);
+
+// Структура-дескриптор для прямых команд
+typedef struct {
+	uint16_t command_code; // Код команды
+	uint16_t min_params_len; // Минимальная длина параметров
+	uint16_t max_params_len; // Максимальная длина параметров
+	DirectCommandHandler_t  handler; // Указатель на функцию-обработчик
+	} DirectCommandDescriptor_t; // "паспорт" для прямой команды.
+
+// Структура-дескриптор для команд-рецептов
+typedef struct {
+	uint16_t command_code; // Код команды
+	uint16_t min_params_len; // Минимальная длина параметров
+	uint16_t max_params_len; // Максимальная длина параметров
+	RecipeID_t recipe_id; // ID рецепта
+	} RecipeCommandDescriptor_t; // "паспорт" для команды-рецепта.
+		                         // Он очень похож, "паспорт" для прямой команды.
+		                         // но вместо указателя на функцию-обработчик (handler)
+		                         // содержит recipe_id. Это связывает код команды напрямую с ID рецепта, который должен запустить
+		                         // JobManager.
  /**
   * @brief Структура для хранения бинарных аргументов.
   */
