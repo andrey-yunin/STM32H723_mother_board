@@ -19,6 +19,7 @@ typedef enum {
     RECIPE_START_MOTOR,
     RECIPE_ASPIRATE,
     RECIPE_INITIALIZE_SYSTEM,
+	RECIPE_DISPENSER_WASH,
 
 	// --- [ADD_NEW_COMMAND] ---
 	// 1. Добавьте новый ID рецепта здесь

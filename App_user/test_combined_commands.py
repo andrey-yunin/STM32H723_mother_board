@@ -5,7 +5,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM5' 
+SERIAL_PORT = '/dev/ttyACM1' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
@@ -285,6 +285,23 @@ def test_get_status_command():
         return True
     return False
 
+def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int):
+    print(f"\n=== Тест команды DISPENSER_WASH (0x2000) для дозатора {dispenser_id}, объем {volume} мкл, циклов {cycles} ===")
+    
+    # Параметры: dispenser_id (UINT8), volume (UINT16), cycles (UINT8)
+    params = dispenser_id.to_bytes(1, 'big') + \
+             volume.to_bytes(2, 'big') + \
+             cycles.to_bytes(1, 'big')
+    
+    if not send_and_wait_ack(0x2000, params):
+        return False
+    
+    if not wait_for_done(0x2000):
+        return False
+    
+    print(f"=== Тест DISPENSER_WASH для дозатора {dispenser_id} пройден успешно ===")
+    return True
+
 def test_combined_scenario():
     print("\n=== Комбинированный сценарий: INIT + GET_STATUS ===")
     # Отправляем INIT
@@ -351,6 +368,11 @@ def main():
 
         # Запускаем индивидуальный тест GET_STATUS для проверки
         if all_tests_passed and not test_get_status_command():
+            all_tests_passed = False
+
+        # Запускаем индивидуальный тест DISPENSER_WASH для проверки
+        # Пример: дозатор 1, 1000 мкл, 2 цикла
+        if all_tests_passed and not test_dispenser_wash_command(1, 1000, 2):
             all_tests_passed = False
 
         # Запускаем комбинированный сценарий

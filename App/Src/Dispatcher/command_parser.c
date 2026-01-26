@@ -8,12 +8,22 @@
 #include "direct_command_handlers.h"
 
 // Таблица дескрипторов для команд-рецептов
+
+        //INIT descriptor:
 const RecipeCommandDescriptor_t recipe_command_table[] = {
 		{.command_code = 0x1002, // Код команды INIT
 		 .min_params_len = 1,
 		 .max_params_len = 1,
 		 .recipe_id = RECIPE_INITIALIZE_SYSTEM // ID рецепта INIT
 		 },
+
+		 //DISPENSER_WASH descriptor:
+		 {.command_code = 0x2000, // Код команды DISPENSER_WASH
+		  .min_params_len = 4,   // dispenser_id (1) + volume (2) + cycles (1) = 4 байта
+		  .max_params_len = 4,   //
+		  .recipe_id = RECIPE_DISPENSER_WASH // ID рецепта DISPENSER_WASH
+		 },
+
 
 		 // Здесь будут добавляться другие команды-рецепты
 

@@ -51,3 +51,134 @@
 1.  **Реализация обработки `DISPENSER_WASH` (0x2000):** Добавить `RECIPE_DISPENSER_WASH` в `RecipeID_t`, его рецепт в `recipe_store.c`, `case 0x2000` в `command_parser.c` и новый тестовый случай.
 2.  **Исправление нарушения протокола `UNKNOWN_COMMAND` (0xFFFF):** Изменить `default` случай в `command_parser.c` для отправки *только* `NACK`, и добавить новый тестовый случай.
 3.  **Интеграция `GET_STATUS` (0x1000) для прямой обработки:** Создать `direct_command_handlers.h` и `direct_command_handlers.c` для `handle_get_status` и модифицировать `case 0x1000` в `command_parser.c` для прямого вызова.
+
+---
+
+# Руководство: Как добавить новую команду-рецепт в проект
+
+Это руководство описывает шаги, необходимые для добавления новой команды, выполняемой через `JobManager` как "рецепт".
+
+## Шаг 1: Определение ID рецепта
+
+Каждая новая команда-рецепт должна иметь уникальный идентификатор.
+
+**Действие:**
+1.  Откройте файл `App/Inc/Dispatcher/command_parser.h`.
+2.  В перечислении (enum) `RecipeID_t` добавьте новый идентификатор для вашей команды перед `RECIPE_MAX_ID`.
+
+**Пример:**
+```c
+typedef enum {
+    // ... существующие ID ...
+    RECIPE_INITIALIZE_SYSTEM,
+    RECIPE_NEW_COMMAND, // <-- Ваша новая команда
+    // --- [ADD_NEW_COMMAND] ---
+    RECIPE_MAX_ID
+} RecipeID_t;
+```
+
+## Шаг 2: Создание рецепта
+
+Рецепт — это последовательность шагов (действий), которые должно выполнить устройство.
+
+**Действие:**
+1.  Откройте файл `App/Src/Dispatcher/recipe_store.c`.
+2.  Создайте статический массив `RecipeStep_t`, описывающий шаги для вашего рецепта.
+3.  Создайте глобальную структуру `Recipe_t` для вашего рецепта, которая включает в себя указатель на массив шагов и их количество.
+
+**Пример:**
+```c
+// Определение шагов для рецепта "Новая Команда"
+static const RecipeStep_t g_recipe_new_command_steps[] = {
+    // Пример: шаг 1 - включить мотор 1 на 1000 тиков
+    { .action_type = ACTION_TYPE_MOTOR_MOVE, .params.motor_move = { .motor_id = 1, .speed = 500, .position = 1000 } },
+    // Пример: шаг 2 - задержка на 500 мс
+    { .action_type = ACTION_TYPE_DELAY, .params.delay = { .ms = 500 } },
+};
+
+// Определение самого рецепта "Новая Команда"
+const Recipe_t g_recipe_new_command = {
+    .steps = g_recipe_new_command_steps,
+    .num_steps = sizeof(g_recipe_new_command_steps) / sizeof(g_recipe_new_command_steps[0])
+};
+```
+
+## Шаг 3: Регистрация рецепта
+
+Система должна знать, как найти ваш новый рецепт по его ID.
+
+**Действие:**
+1.  Оставаясь в файле `App/Src/Dispatcher/recipe_store.c`, найдите функцию `Recipe_Get`.
+2.  Добавьте `case` в `switch` для вашего нового `RecipeID_t`, который будет возвращать указатель на вашу глобальную структуру `Recipe_t`.
+
+**Пример:**
+```c
+const Recipe_t* Recipe_Get(RecipeID_t id) {
+    switch (id) {
+        // ... существующие case ...
+        case RECIPE_INITIALIZE_SYSTEM:
+            return &g_recipe_initialize_system;
+        case RECIPE_NEW_COMMAND: // <-- Ваш новый case
+            return &g_recipe_new_command;
+        default:
+            return NULL;
+    }
+}
+```
+
+## Шаг 4: Регистрация бинарной команды
+
+Теперь нужно связать код бинарной команды (например, `0x2000`) с вашим ID рецепта.
+
+**Действие:**
+1.  Откройте файл `App/Src/Dispatcher/command_parser.c`.
+2.  В массиве `recipe_command_table` добавьте новый дескриптор `RecipeCommandDescriptor_t` для вашей команды.
+
+**Пример:**
+```c
+const RecipeCommandDescriptor_t recipe_command_table[] = {
+    // ... существующие дескрипторы ...
+    {
+        .command_code = 0x1002, // INIT
+        .min_params_len = 1,
+        .max_params_len = 1,
+        .recipe_id = RECIPE_INITIALIZE_SYSTEM
+    },
+    {
+        .command_code = 0x2000, // <-- Код вашей новой команды
+        .min_params_len = 3,    // <-- Минимальная длина параметров
+        .max_params_len = 3,    // <-- Максимальная длина параметров
+        .recipe_id = RECIPE_NEW_COMMAND // <-- ID вашего рецепта
+    },
+};
+```
+**Важно:** Убедитесь, что `min_params_len` и `max_params_len` соответствуют документации на протокол для этой команды.
+
+## Шаг 5: Тестирование
+
+Последний шаг — добавить тест для проверки работоспособности новой команды.
+
+**Действие:**
+1.  Откройте файл `App_user/test_combined_commands.py`.
+2.  Создайте новую тестовую функцию, которая отправляет вашу новую команду и проверяет ответы (`ACK`, `DONE`).
+3.  Вызовите эту функцию из `main`.
+
+**Пример:**
+```python
+def test_new_command():
+    print("\n=== Тест команды NEW_COMMAND (0x2000) ===")
+    # Параметры команды, например, 3 байта
+    params = b'\x01\x02\x03'
+    if not send_and_wait_ack(0x2000, params):
+        return False
+    if not wait_for_done(0x2000):
+        return False
+    print("=== Тест NEW_COMMAND пройден успешно ===")
+    return True
+
+#... в функции main()
+if all_tests_passed and not test_new_command():
+    all_tests_passed = False
+```
+---
+После выполнения всех этих шагов ваша новая команда будет полностью интегрирована в систему.
