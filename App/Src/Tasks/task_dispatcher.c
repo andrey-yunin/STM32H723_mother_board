@@ -15,15 +15,7 @@
 #include "Dispatcher/job_manager.h"
 
 /**
- * @brief GLOBAL SYSTEM STATE
- */
-typedef enum {
-	SYS_STATE_POWER_ON,       // Начальное состояние после включения
-    SYS_STATE_INITIALIZING,   // Идет процесс инициализации (homing)
-    SYS_STATE_READY,          // Система готова к приему команд
-    SYS_STATE_BUSY,           // Система выполняет комплексную команду (определяется JobManager'ом)
-    SYS_STATE_ERROR           // Произошла ошибка, требуется вмешательство
- } SystemState_t;
+ * @brief GLOBAL SYSTEM STATE */
 
 // Текущее состояние системы (static, чтобы быть видимым только в этом файле)
 
@@ -158,6 +150,19 @@ void SetSystemReady(void)
 {
 	g_system_state = SYS_STATE_READY;
 }
+
+/**
+ *
+ * @brief Возвращает текущее глобальное состояние системы.
+ * @param None
+ * @retval Текущее состояние системы (SystemState_t).
+ */
+SystemState_t GetSystemState(void)
+{
+	return g_system_state;
+}
+
+
 
 
 

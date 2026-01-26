@@ -138,6 +138,53 @@ void Dispatcher_SendError(uint16_t command_code, uint16_t error_code)
 }
 
 
+void Dispatcher_SendData(uint16_t command_code, uint8_t response_type, uint16_t status, const uint8_t* data, uint16_t data_len)
+{
+    // Total payload length: Cmd Code (2) + Type (1) + Status (2) + Data (data_len) + CRC (1)
+	uint16_t payload_segment_len_for_crc = 2 + 1 + 2 + data_len; // Command Code + Type + Status + Data
+	uint16_t payload_len = payload_segment_len_for_crc + 1; // Add 1 byte for CRC
+
+	uint16_t total_packet_len = 3 + 2 + payload_len; // Header (3) + Length Field (2) + Payload
+
+	if (total_packet_len > APP_USB_RESP_MAX_LEN) {
+		return; // Silently drop if packet is too long
+		}
+
+	uint8_t data_packet[APP_USB_RESP_MAX_LEN]; // Local buffer to construct the packet
+
+	// 1. Header
+	data_packet[0] = 0x43; data_packet[1] = 0x4D; data_packet[2] = 0x3E; // "CM>"
+
+	// 2. Length (Payload Length)
+	data_packet[3] = (uint8_t)(payload_len >> 8);
+	data_packet[4] = (uint8_t)(payload_len & 0xFF);
+
+	// 3. Command Code
+	data_packet[5] = (uint8_t)(command_code >> 8);
+	data_packet[6] = (uint8_t)(command_code & 0xFF);
+
+	// 4. Response Type (e.g., 0x03 for DATA)
+    data_packet[7] = response_type;
+
+	// 5. Status
+    data_packet[8] = (uint8_t)(status >> 8);
+    data_packet[9] = (uint8_t)(status & 0xFF);
+
+	// 6. Actual Data (copied after Status bytes)
+	if (data_len > 0 && data != NULL) {
+		memcpy(&data_packet[10], data, data_len);
+	}
+
+	// 7. CRC (Calculated from Command Code to end of Actual Data)
+	uint8_t crc = calculate_crc(&data_packet[5], payload_segment_len_for_crc); // CRC over CmdCode, Type, Status, Data
+	data_packet[10 + data_len] = crc;
+	
+	// Send the completely formed packet to the queue
+	send_packet_to_queue(data_packet, total_packet_len, false); // false for binary
+	}
+
+
+
 
 
 

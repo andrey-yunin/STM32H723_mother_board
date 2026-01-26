@@ -262,6 +262,12 @@ static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status)
     snprintf(final_msg, sizeof(final_msg), "INFO: Job #%lu finished with status %d.", (unsigned long)job->job_id, final_status);
     Dispatcher_SendUsbResponse(final_msg);
 
+    // Отправляем бинарный DONE-ответ
+    // 0x0000 - успешное завершение, другие коды - для ошибок/статусов
+    uint16_t done_status_code = (final_status == JOB_STATUS_COMPLETED) ? 0x0000 : 0x0001;
+    Dispatcher_SendDone(job->initial_cmd.command_code, done_status_code);
+
+
     if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM && final_status == JOB_STATUS_COMPLETED) {
          JobManager_SignalSystemReady();
     }

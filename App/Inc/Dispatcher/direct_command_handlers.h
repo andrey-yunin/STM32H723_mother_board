@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h> // Для булевых типов, если потребуется
 #include "command_parser.h" // Для DirectCommandHandler_t, DirectCommandDescriptor_t
+
 // Прототипы для обработчиков прямых команд
 void handle_get_status(uint16_t command_code, const uint8_t* params, uint16_t params_len);
 // Здесь будут добавляться прототипы для других прямых команд

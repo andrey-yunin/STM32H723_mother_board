@@ -1,3 +1,4 @@
+
 #include "command_parser.h"
 #include "dispatcher_io.h"
 #include "job_manager.h"
@@ -22,8 +23,31 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 const uint16_t RECIPE_COMMAND_TABLE_SIZE = sizeof(recipe_command_table) / sizeof(RecipeCommandDescriptor_t);
 
 
+/*
+ *
+ * * direct_command_table[]: Это статический массив типа DirectCommandDescriptor_t. В нем мы объявляем нашу первую прямую команду
+     GET_STATUS.
+       * command_code = 0x1000: Указываем код команды GET_STATUS.
+       * min_params_len = 0, max_params_len = 0: Указываем, что GET_STATUS не ожидает параметров.
+       * handler = handle_get_status: Связываем эту команду с функцией-обработчиком, которую мы реализовали в direct_command_handlers.c.
+ *
+ */
 
+// Таблица дескрипторов для прямых команд
+const DirectCommandDescriptor_t direct_command_table[] = {
+		{
+				.command_code = 0x1000, // Код команды GET_STATUS
+				.min_params_len = 0,
+				.max_params_len = 0,
+				.handler = handle_get_status // Указатель на наш обработчик
+				},
 
+				// Здесь будут добавляться другие прямые команды
+
+				};
+
+// Определяем количество команд в таблице
+const uint16_t DIRECT_COMMAND_TABLE_SIZE = sizeof(direct_command_table) / sizeof(DirectCommandDescriptor_t);
 
 // === Локальные типы и прототипы ===
 
@@ -46,18 +70,14 @@ typedef struct {
 } CommandEntry_t;
 
 // Прототипы обработчиков строковых аргументов
-static CommandStatus_t process_string_args_none(const char *args, UniversalCommand_t *cmd);
 static CommandStatus_t process_string_args_motor(const char *args, UniversalCommand_t *cmd);
-static CommandStatus_t process_string_args_help(const char *args, UniversalCommand_t *cmd);
 static CommandStatus_t process_string_args_aspirate(const char *args, UniversalCommand_t *cmd);
 
 
 // === Таблица строковых команд ===
 
 static const CommandEntry_t command_table[] = {
-    { "CMD_GET_STATUS",  RECIPE_GET_STATUS,  process_string_args_none,     "Usage: CMD_GET_STATUS" },
     { "CMD_START_MOTOR", RECIPE_START_MOTOR, process_string_args_motor,    "Usage: CMD_START_MOTOR <motor_id>" },
-    { "CMD_HELP",        RECIPE_HELP,        process_string_args_help,     "Prints this help message" },
     { "CMD_ASPIRATE",    RECIPE_ASPIRATE,    process_string_args_aspirate, "Usage: CMD_ASPIRATE <reagent_id>" },
 };
 static const size_t num_commands = sizeof(command_table) / sizeof(command_table[0]);
@@ -106,15 +126,6 @@ void Parser_ProcessCommand(char *command_line)
 
 // === Реализация обработчиков строковых аргументов ===
 
-static CommandStatus_t process_string_args_none(const char *args, UniversalCommand_t *cmd) {
-    if (args != NULL && strlen(args) > 0) {
-        return CMD_INVALID_ARGS;
-    }
-    cmd->args_type = ARGS_TYPE_NONE;
-    if (JobManager_StartNewJob(cmd) == 0) return CMD_ERROR;
-    return CMD_OK;
-}
-
 static CommandStatus_t process_string_args_motor(const char *args, UniversalCommand_t *cmd) {
     int motor_id;
     if (args == NULL || sscanf(args, "%d", &motor_id) != 1) {
@@ -124,18 +135,6 @@ static CommandStatus_t process_string_args_motor(const char *args, UniversalComm
     snprintf(cmd->args.string, APP_USB_CMD_MAX_LEN, "%d", motor_id); // Corrected: Use args instead of %d
     cmd->args.string[APP_USB_CMD_MAX_LEN - 1] = '\0';
     if (JobManager_StartNewJob(cmd) == 0) return CMD_ERROR;
-    return CMD_OK;
-}
-
-static CommandStatus_t process_string_args_help(const char *args, UniversalCommand_t *cmd) {
-    if (args != NULL && strlen(args) > 0) {
-        return CMD_INVALID_ARGS;
-    }
-    Dispatcher_SendUsbResponse("--- Available String Commands ---");
-    for (size_t i = 0; i < num_commands; i++) {
-        Dispatcher_SendUsbResponse(command_table[i].help_string);
-    }
-    Dispatcher_SendUsbResponse("-------------------------------");
     return CMD_OK;
 }
 
@@ -205,6 +204,38 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     }
 
 
+    /*
+     *
+     * цикл for итерирует по direct_command_table.
+   * При совпадении command_code выполняется проверка params_len на соответствие min_params_len и max_params_len. В случае несовпадения
+     отправляется NACK и функция завершается.
+   * Если проверка пройдена, вызывается соответствующий обработчик из direct_command_table[i].handler, и функция
+     Parser_ProcessBinaryCommand завершается.
+   * Если команда не найдена в direct_command_table, поиск продолжается в recipe_command_table.
+     *
+     */
+
+
+    // Ищем команду в таблице прямых команд
+    for (uint16_t i = 0; i < DIRECT_COMMAND_TABLE_SIZE; i++) {
+    	if (direct_command_table[i].command_code == command_code) {
+    		// Команда найдена в таблице прямых команд
+    		// Проверка длины параметров
+    		if (params_len < direct_command_table[i].min_params_len ||
+    			params_len > direct_command_table[i].max_params_len) {
+    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+    			return;
+    			}
+
+    		// Вызываем обработчик прямой команды
+    		direct_command_table[i].handler(command_code, &packet[7], params_len);
+    		return; // Команда обработана, выходим из функции
+    		}
+    	}
+
+
+    // Если команда не найдена в таблице прямых команд, продолжаем поиск в таблице рецептов
+
 
     /*
      *   * Мы добавляем цикл for, который итерирует по нашей новой таблице recipe_command_table.
@@ -224,6 +255,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     for (uint16_t i = 0; i < RECIPE_COMMAND_TABLE_SIZE; i++) {
     	if (recipe_command_table[i].command_code == command_code) {
     		// Command found in recipe table
+    		cmd.command_code = command_code;  // <-- Добавлено поле command_code 22.01.2026
     		cmd.recipe_id = recipe_command_table[i].recipe_id;
 
     		// Parameter length validation

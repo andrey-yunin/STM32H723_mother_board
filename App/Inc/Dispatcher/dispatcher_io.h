@@ -59,5 +59,15 @@ void Dispatcher_SendDone(uint16_t command_code, uint16_t status);
  */
 void Dispatcher_SendError(uint16_t command_code, uint16_t error_code);
 
+/**
+ *
+ * @brief Отправляет бинарный пакет с данными (DATA-ответ).
+ * @param command_code Код команды, на которую отправляется ответ.
+ * @param data Указатель на буфер с данными.
+ * @param data_len Длина данных.
+*/
+
+void Dispatcher_SendData(uint16_t command_code, uint8_t response_type, uint16_t status, const uint8_t* data, uint16_t data_len);
+
 
 #endif /* INC_DISPATCHER_DISPATCHER_IO_H_ */

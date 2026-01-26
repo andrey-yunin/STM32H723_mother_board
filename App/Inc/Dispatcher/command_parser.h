@@ -16,9 +16,7 @@
   */
 typedef enum {
 	RECIPE_NONE = 0,
-    RECIPE_GET_STATUS,
     RECIPE_START_MOTOR,
-    RECIPE_HELP,
     RECIPE_ASPIRATE,
     RECIPE_INITIALIZE_SYSTEM,
 
@@ -69,6 +67,7 @@ typedef struct {
  */
 
 typedef struct {
+	uint16_t command_code; // <-- Добавлено поле command_code 22.01.2026
 	RecipeID_t recipe_id;
 
 	// Указывает, какой тип данных находится в union 'args'
