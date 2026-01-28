@@ -60,9 +60,8 @@
     *   [ ] **Действие C:** Добавить `case 0x2000` для `DISPENSER_WASH` в `Parser_ProcessBinaryCommand` в `App/Src/Dispatcher/command_parser.c`. Этот `case` будет извлекать параметры (`dispenser_id`, `volume`, `cycles` согласно документации) и вызывать `JobManager_StartNewJob`.
     *   [ ] **Действие D:** Добавить новый тестовый случай для `DISPENSER_WASH` в `App_user/test_combined_commands.py`.
 
-*   [ ] **2.2 Исправление нарушения протокола `UNKNOWN_COMMAND` (0xFFFF):**
-    *   [ ] **Действие A:** Изменить `default` случай в `Parser_ProcessBinaryCommand` в `App/Src/Dispatcher/command_parser.c` для отправки *только* `NACK` (без предшествующего `ACK`) для действительно неизвестных команд.
-    *   [ ] **Действие B:** Добавить новый тестовый случай для `UNKNOWN_COMMAND` в `App_user/test_combined_commands.py`.
+*   [x] **2.2 Исправление нарушения протокола `UNKNOWN_COMMAND` (0xFFFF):**
+    *   **Результат:** Проблема с протоколом `UNKNOWN_COMMAND` (0xFFFF) была успешно решена. Теперь для неизвестных команд отправляется только `NACK` после полной проверки команды, без предварительного `ACK`. Добавлен соответствующий тестовый случай в `App_user/test_combined_commands.py`, который успешно проходит.
 
 *   [ ] **2.3 Интеграция `GET_STATUS` (0x1000) для прямой обработки:**
     *   [ ] **Действие A:** Создать новый заголовочный файл: `App/Inc/Dispatcher/direct_command_handlers.h`. Этот файл будет объявлять прототип для `handle_get_status`.

@@ -14,6 +14,7 @@
 
 // Прототипы для обработчиков прямых команд
 void handle_get_status(uint16_t command_code, const uint8_t* params, uint16_t params_len);
+
 // Здесь будут добавляться прототипы для других прямых команд
 
 #endif /* INC_DISPATCHER_DIRECT_COMMAND_HANDLERS_H_ */

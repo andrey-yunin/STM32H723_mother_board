@@ -4,6 +4,7 @@
 #include "job_manager.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include "cmsis_os.h" // Required for osDelay
 #include "direct_command_handlers.h"
 
@@ -52,7 +53,7 @@ const DirectCommandDescriptor_t direct_command_table[] = {
 				.handler = handle_get_status // Указатель на наш обработчик
 				},
 
-				// Здесь будут добавляться другие прямые команды
+	   // Здесь будут добавляться другие прямые команды
 
 				};
 
@@ -192,9 +193,6 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
         return;
     }
 
-    Dispatcher_SendAck(command_code);
-    osDelay(1); // Уступаем CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
-
     UniversalCommand_t cmd;
     cmd.recipe_id = RECIPE_NONE;
 
@@ -237,6 +235,10 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     			return;
     			}
 
+    		//Отправляем ACK
+    		Dispatcher_SendAck(command_code);
+    		osDelay(1); //CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
+
     		// Вызываем обработчик прямой команды
     		direct_command_table[i].handler(command_code, &packet[7], params_len);
     		return; // Команда обработана, выходим из функции
@@ -275,6 +277,10 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     			return;
     			}
 
+    		//Отправляем ACK
+    		Dispatcher_SendAck(command_code);
+    		osDelay(1); // Уступаем CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
+
     		// Start JobManager to execute the recipe
     		if (JobManager_StartNewJob(&cmd) == 0) {
     			Dispatcher_SendError(command_code, 0x0004); // ERR_JOB_FAILED_TO_START
@@ -284,23 +290,8 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
      }
 
 
-    switch (command_code)
-    {
-               // --- [ADD_NEW_COMMAND] ---
-        // 2. Добавьте новый `case` для вашей команды здесь
-        // case 0x4000: // WASH_CUVETTE
-        //     cmd.recipe_id = RECIPE_WASH_CUVETTE;
-        //     if (params_len != 1) {
-        //         Dispatcher_SendNack(command_code, 0x0003);
-        //         return;
-        //     }
-        //     break;
-        default:
-            Dispatcher_SendNack(command_code, 0x0001); // ERR_UNKNOWN_COMMAND
-            return;
-    }
-    
-    if (JobManager_StartNewJob(&cmd) == 0) {
-        Dispatcher_SendError(command_code, 0x0004); // ERR_JOB_FAILED_TO_START
-    }
+    // Если мы дошли до сюда, команда не была найдена ни в одной из таблиц.
+    Dispatcher_SendNack(command_code, 0x0001); // ERR_UNKNOWN_COMMAND
+    return;
 }
+

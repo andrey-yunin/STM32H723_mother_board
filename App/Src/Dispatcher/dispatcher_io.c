@@ -71,7 +71,7 @@ void Dispatcher_SendNack(uint16_t command_code, uint16_t error_code)
 	nack_packet[3] = 0x00; nack_packet[4] = 0x06; // Length
 	nack_packet[5] = (command_code >> 8) & 0xFF; // Cmd
 	nack_packet[6] = command_code & 0xFF;
-	nack_packet[7] = 0x04; // Type ERROR
+	nack_packet[7] = 0x00; // Type NACK
 	nack_packet[8] = (error_code >> 8) & 0xFF; // Status
 	nack_packet[9] = error_code & 0xFF;
 	nack_packet[10] = calculate_crc(&nack_packet[5], 5); // CRC

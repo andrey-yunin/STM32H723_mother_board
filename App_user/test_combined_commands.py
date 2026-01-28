@@ -5,7 +5,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM1' 
+SERIAL_PORT = '/dev/ttyACM0' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
@@ -302,6 +302,51 @@ def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int):
     print(f"=== Тест DISPENSER_WASH для дозатора {dispenser_id} пройден успешно ===")
     return True
 
+def test_unknown_command():
+    print("\n=== Тест неизвестной команды (0xFFFF) ===")
+    command_code = 0xFFFF
+    command_packet = build_command(command_code)
+    
+    print(f"Отправка команды 0x{command_code:04x}: {' '.join(f'{b:02x}' for b in command_packet)}")
+    ser.write(command_packet)
+    
+    nack_received = False
+    ack_received = False
+    
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code:
+                response_type = msg["content"]["response_type"]
+                if response_type == 0x00:  # NACK
+                    nack_received = True
+                    print(f"Получен ожидаемый NACK для 0x{command_code:04x}.")
+                elif response_type == 0x01:  # ACK
+                    ack_received = True
+                    print(f"ERROR: Получен ACK для неизвестной команды 0x{command_code:04x}!")
+                # Мы можем выйти из цикла, как только получим интересующий нас ответ
+                break
+            else:
+                 # Игнорируем другие сообщения в этом тесте
+                 if msg["type"] == "text":
+                    print(f"DEVICE (unexpected): {msg['content']}")
+                 else:
+                    print(f"DEVICE (BIN, unexpected): {msg['content']['raw_packet'].hex(' ')}")
+
+        except queue.Empty:
+            continue
+
+    if ack_received:
+        print("Тест провален: был получен ACK.")
+        return False
+    if not nack_received:
+        print("Тест провален: не был получен NACK.")
+        return False
+    
+    print("Тест неизвестной команды пройден успешно.")
+    return True
+
 def test_combined_scenario():
     print("\n=== Комбинированный сценарий: INIT + GET_STATUS ===")
     # Отправляем INIT
@@ -373,6 +418,10 @@ def main():
         # Запускаем индивидуальный тест DISPENSER_WASH для проверки
         # Пример: дозатор 1, 1000 мкл, 2 цикла
         if all_tests_passed and not test_dispenser_wash_command(1, 1000, 2):
+            all_tests_passed = False
+
+        # Тест неизвестной команды
+        if all_tests_passed and not test_unknown_command():
             all_tests_passed = False
 
         # Запускаем комбинированный сценарий
