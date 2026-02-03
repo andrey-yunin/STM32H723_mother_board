@@ -11,6 +11,26 @@
 #include <stdint.h>
 #include "app_config.h"
 
+// --- НОВЫЕ СТРУКТУРЫ ДЛЯ РАЗОБРАННЫХ ПАРАМЕТРОВ ---
+
+/**
+ * @brief Разобранные параметры для команды INIT (0x1002)
+ */
+typedef struct {
+    uint8_t modules_mask;
+} ParsedArgs_Init;
+
+/**
+ * @brief Разобранные параметры для команды DISPENSER_WASH (0x2000)
+ */
+typedef struct {
+    uint8_t dispenser_id;
+    uint32_t volume;
+    uint16_t cycles;
+} ParsedArgs_DispenserWash;
+
+// --- КОНЕЦ НОВЫХ СТРУКТУР ---
+
  /**
   * @brief "Внутренние имена" для всех команд-рецептов.
   */
@@ -75,12 +95,18 @@ typedef struct {
 	enum {
 		ARGS_TYPE_NONE,   // Нет аргументов
 		ARGS_TYPE_STRING, // Аргументы в виде строки
-		ARGS_TYPE_BINARY  // Аргументы в виде бинарного блока
+		ARGS_TYPE_BINARY,  // Аргументы в виде бинарного блока
+		// --- НОВЫЙ ТИП --- 29.01.2026
+		ARGS_TYPE_PARSED  // Аргументы разобраны в одну из структур ниж
 		} args_type;
 
 	union {
 			char string[APP_USB_CMD_MAX_LEN];
 			BinaryArgs_t binary;
+			// --- НОВЫЕ ПОЛЯ --- 29.01.2026
+			ParsedArgs_Init init;
+			ParsedArgs_DispenserWash dispenser_wash;
+			// Здесь будут добавляться другие команды
 			} args;
 } UniversalCommand_t;
 

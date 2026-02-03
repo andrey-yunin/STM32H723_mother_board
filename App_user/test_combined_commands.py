@@ -5,7 +5,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM0' 
+SERIAL_PORT = '/dev/ttyACM4' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
