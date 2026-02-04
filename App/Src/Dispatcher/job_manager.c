@@ -109,6 +109,69 @@ bool JobManager_ProcessExecutorResponse(uint32_t job_id, uint8_t executor_id, bo
       return true;
 }
 
+// --- Helper functions for dynamic parameter retrieval ---
+static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t source, uint8_t static_value)
+{
+	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+		switch (source) {
+			case PARAM_SOURCE_CMD_INIT_MASK:
+				// This source is designed for the overall mask (e.g., in INIT command),
+				// not usually for a single motor_id value.
+				// However, if a parameter is *intended* to be the modules_mask value itself,
+				// it would be returned here. For specific motor_id, this case is less likely
+				// but included for completeness.
+				return job->initial_cmd.args.init.modules_mask;
+			case PARAM_SOURCE_CMD_DISPENSER_ID:
+				return job->initial_cmd.args.dispenser_wash.dispenser_id;
+				// Add other uint8_t sources here as needed for other commands
+				default:
+					break; // Fall through to static_value if source not found or is static
+					}
+		}
+	return static_value; // Return static value if not parsed or source is static
+}
+
+static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t source, uint16_t static_value)
+{
+	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+		switch (source) {
+			case PARAM_SOURCE_CMD_DISPENSER_CYCLES:
+				return job->initial_cmd.args.dispenser_wash.cycles;
+				default:
+					break;
+					}
+		}
+	return static_value;
+}
+
+static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t source, int32_t static_value)
+{
+	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+		switch (source) {
+		// Add int32_t sources here as needed
+		default:
+			break;
+			}
+		}
+	return static_value;
+}
+
+static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t source, uint32_t static_value)
+{
+	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+		switch (source) {
+			case PARAM_SOURCE_CMD_DISPENSER_VOLUME:
+				return job->initial_cmd.args.dispenser_wash.volume;
+				// Add other uint32_t sources here as needed
+				// For example:
+				// case PARAM_SOURCE_CMD_WAIT_DELAY: return job->initial_cmd.args.wait.delay_ms;
+				default:
+					break; // Fall through to static_value
+					}
+		}
+	return static_value;
+}
+
 void JobManager_Run(void)
 {
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
@@ -123,9 +186,14 @@ void JobManager_Run(void)
             }
             const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
             if (current_step->num_actions == 1 && current_step->atomic_actions[0].action == ACTION_WAIT_MS) {
-                if ((HAL_GetTick() - job->step_start_time_ms) >= current_step->atomic_actions[0].params.wait.delay_ms) {
-                    JobManager_ProcessExecutorResponse(job->job_id, 0, true);
-                }
+
+            // added 04/02/2026--- NEW: Determine effective delay_ms for ACTION_WAIT_MS ---
+            // We need to get the effective action here because current_step->atomic_actions[0] is const
+            uint32_t effective_wait_delay_ms = JobManager_GetUint32Param(
+            		job, current_step->atomic_actions[0].params.wait.delay_ms_source,current_step->atomic_actions[0].params.wait.delay_ms);
+            if ((HAL_GetTick() - job->step_start_time_ms) >= effective_wait_delay_ms) { // Use dynamic delay_ms
+            	JobManager_ProcessExecutorResponse(job->job_id, 0, true);
+            	}
             }
 		}
 	}
@@ -173,22 +241,27 @@ static void JobManager_ExecuteStep(JobContext_t* job)
         
         bool should_execute = true;
 
+        // Determine effective parameters for ACTION_HOME_MOTOR
+        // These will be used for both filtering and dispatching the command
+        uint8_t effective_home_motor_id = JobManager_GetUint8Param(job, action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
+        uint16_t effective_home_motor_speed = JobManager_GetUint16Param(job, action->params.home_motor.speed_source, action->params.home_motor.speed);
+
         if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM && action->action == ACTION_HOME_MOTOR)
-        {
-            if (job->initial_cmd.args_type == ARGS_TYPE_PARSED)
-			//(job->initial_cmd.args_type == ARGS_TYPE_BINARY && job->initial_cmd.args.binary.len > 0)
-            {
-                uint8_t modules_mask = job->initial_cmd.args.binary.raw[0];
-                uint8_t motor_id_in_recipe = action->params.home_motor.motor_id;
-                if (motor_id_in_recipe > 0)
-                {
-                    uint8_t motor_bit = 1 << (motor_id_in_recipe - 1);
-                    if (!(modules_mask & motor_bit)) {
-                        should_execute = false;
-                    }
-                }
-            }
-        }
+        	{
+        	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED)
+        		{
+        		uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
+        		// Use the effective_home_motor_id for filtering
+        		if (effective_home_motor_id > 0)
+        			{
+        			uint8_t motor_bit = 1 << (effective_home_motor_id - 1);
+        			if (!(modules_mask & motor_bit)) {
+        				should_execute = false;
+        				}
+        			}
+        		}
+        	}
+
         // --- [ADD_NEW_COMMAND] ---
         // 5. Если ваша новая команда параметризованная, добавьте ее логику фильтрации здесь
         // else if (job->initial_recipe_id == RECIPE_WASH_CUVETTE && action->action == ACTION_WASH)
@@ -208,40 +281,71 @@ static void JobManager_ExecuteStep(JobContext_t* job)
         CAN_Message_t can_msg;
         switch (action->action) {
             case ACTION_ROTATE_MOTOR:
-                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent ROTATE_MOTOR (ID:%u, Steps:%ld, Speed:%u) to Exec.",
-                    (unsigned long)job->job_id, action->params.rotate_motor.motor_id, (long)action->params.rotate_motor.steps, action->params.rotate_motor.speed);
-                Dispatcher_SendUsbResponse(info_msg);
-                Packer_CreateRotateMotorMsg(action->params.rotate_motor.motor_id, action->params.rotate_motor.steps, action->params.rotate_motor.speed, job->job_id, &can_msg);
-                xQueueSend(can_tx_queue_handle, &can_msg, 0);
-                job->pending_actions_count--; // Simulate response
-                break;
+            	// added 04/02/2026 --- NEW: Determine effective parameters for ACTION_ROTATE_MOTOR ---
+            	uint8_t effective_rotate_motor_id = JobManager_GetUint8Param(job, action->params.rotate_motor.motor_id_source,
+            	      action->params.rotate_motor.motor_id);
+            	int32_t effective_rotate_motor_steps = JobManager_GetInt32Param(job, action->params.rotate_motor.steps_source,
+            	      action->params.rotate_motor.steps);
+            	uint16_t effective_rotate_motor_speed = JobManager_GetUint16Param(job, action->params.rotate_motor.speed_source,
+            	      action->params.rotate_motor.speed);
+            	// --- END NEW ---
+
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent ROTATE_MOTOR (ID:%u, Steps:%ld, Speed:%u) to Exec.",
+            			(unsigned long)job->job_id, effective_rotate_motor_id, (long)effective_rotate_motor_steps, effective_rotate_motor_speed);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	Packer_CreateRotateMotorMsg(effective_rotate_motor_id, effective_rotate_motor_steps, effective_rotate_motor_speed, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Simulate response
+            	break;
+
             case ACTION_START_PUMP:
-                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id, action->params.pump.pump_id);
-                Dispatcher_SendUsbResponse(info_msg);
-                Packer_CreateStartPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
-                xQueueSend(can_tx_queue_handle, &can_msg, 0);
-                job->pending_actions_count--; // Simulate response
-                break;
+            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_START_PUMP ---
+            	uint8_t effective_start_pump_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
+            	// --- END NEW ---
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id,
+            			effective_start_pump_id);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	Packer_CreateStartPumpMsg(effective_start_pump_id, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Simulate response
+            	break;
+
+
             case ACTION_STOP_PUMP:
-                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id, action->params.pump.pump_id);
-                Dispatcher_SendUsbResponse(info_msg);
-                Packer_CreateStopPumpMsg(action->params.pump.pump_id, job->job_id, &can_msg);
-                xQueueSend(can_tx_queue_handle, &can_msg, 0);
-                job->pending_actions_count--; // Simulate response
-                break;
+            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_STOP_PUMP ---
+            	uint8_t effective_stop_pump_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
+            	// --- END NEW ---
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id,
+            			effective_stop_pump_id);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	Packer_CreateStopPumpMsg(effective_stop_pump_id, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Simulate response
+            	break;
+
+
             case ACTION_HOME_MOTOR:
                 snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent HOME_MOTOR (ID:%u, Speed:%u) to Exec.",
-                    (unsigned long)job->job_id, action->params.home_motor.motor_id, action->params.home_motor.speed);
+                    (unsigned long)job->job_id, effective_home_motor_id, effective_home_motor_speed); // added 04/02/2026 ТЕПЕРЬ ИСПОЛЬЗУЕМ effective_home_motor_id/speed
                 Dispatcher_SendUsbResponse(info_msg);
-                Packer_CreateHomeMotorMsg(action->params.home_motor.motor_id, action->params.home_motor.speed, job->job_id, &can_msg);
+                Packer_CreateHomeMotorMsg(effective_home_motor_id, effective_home_motor_speed, job->job_id, &can_msg); // added 04/02/2026 ТЕПЕРЬ ИСПОЛЬЗУЕМ effective_home_motor_id/speed
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
                 job->pending_actions_count--; // Simulate response
                 break;
+
             case ACTION_WAIT_MS:
-                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id, (unsigned long)action->params.wait.delay_ms);
-                Dispatcher_SendUsbResponse(info_msg);
-                job->pending_actions_count--;
-                break;
+            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_WAIT_MS ---
+            	uint32_t effective_wait_delay_ms = JobManager_GetUint32Param(job, action->params.wait.delay_ms_source, action->params.wait.delay_ms);
+            	// --- END NEW ---
+
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id,
+            			(unsigned long)effective_wait_delay_ms);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	// Note: The actual waiting logic often happens outside this switch, possibly in JobManager_Run()
+            	// For now, we update the log message to reflect the dynamic parameter.
+            	job->pending_actions_count--;
+            	break;
+
             default:
                 snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Unknown action %d in step %u.", (unsigned long)job->job_id, action->action, job->current_step_index);
                 Dispatcher_SendUsbResponse(info_msg);
