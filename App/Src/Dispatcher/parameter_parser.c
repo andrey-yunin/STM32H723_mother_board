@@ -8,7 +8,7 @@
 #include "parameter_parser.h"
 #include "command_parser.h"
 #include <string.h> // для memcpy
-
+/*
 // Вспомогательная функция для безопасного чтения 4-байтного числа
 static uint32_t read_uint32_from_buffer(const uint8_t* buffer) {
 	return ((uint32_t)buffer[0] << 24) |
@@ -16,6 +16,7 @@ static uint32_t read_uint32_from_buffer(const uint8_t* buffer) {
 		   ((uint32_t)buffer[2] << 8)  |
 		   ((uint32_t)buffer[3]);
 	}
+	*/
 
 // Вспомогательная функция для безопасного чтения 2-байтного числа
 static uint16_t read_uint16_from_buffer(const uint8_t* buffer) {
@@ -45,15 +46,15 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
 		break;
 
      case 0x2000: // DISPENSER_WASH
-    	 // Ожидаем: dispenser_id (1) + volume (4) + cycles (2) = 7 байт
-    	 if (params_len == 7) {
+    	 // Согласно документации: dispenser_id (1) + volume (2) + cycles (1) = 4 байта
+    	 if (params_len == 4) {
     		 cmd->args.dispenser_wash.dispenser_id = raw_params[0];
 
-    		 // Читаем 4-байтный volume, начиная с 1-го байта
-    		 cmd->args.dispenser_wash.volume = read_uint32_from_buffer(&raw_params[1]);
+    		 // Читаем 2-байтный volume, начиная с 1-го байта
+    		 cmd->args.dispenser_wash.volume = read_uint16_from_buffer(&raw_params[1]);
 
-    		 // Читаем 2-байтный cycles, начиная с 5-го байта
-    		 cmd->args.dispenser_wash.cycles = read_uint16_from_buffer(&raw_params[5]);
+    		 // Читаем 1-байтный cycles, начиная с 3-го байта
+    		 cmd->args.dispenser_wash.cycles = raw_params[3];
 
     		 cmd->args_type = ARGS_TYPE_PARSED; // Устанавливаем флаг ТОЛЬКО ЗДЕСЬ при успехе
     		 }

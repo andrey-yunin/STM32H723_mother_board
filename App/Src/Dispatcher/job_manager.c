@@ -175,7 +175,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 
         if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM && action->action == ACTION_HOME_MOTOR)
         {
-            if (job->initial_cmd.args_type == ARGS_TYPE_BINARY && job->initial_cmd.args.binary.len > 0)
+            if (job->initial_cmd.args_type == ARGS_TYPE_PARSED)
+			//(job->initial_cmd.args_type == ARGS_TYPE_BINARY && job->initial_cmd.args.binary.len > 0)
             {
                 uint8_t modules_mask = job->initial_cmd.args.binary.raw[0];
                 uint8_t motor_id_in_recipe = action->params.home_motor.motor_id;

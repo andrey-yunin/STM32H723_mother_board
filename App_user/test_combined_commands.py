@@ -288,10 +288,8 @@ def test_get_status_command():
 def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int):
     print(f"\n=== Тест команды DISPENSER_WASH (0x2000) для дозатора {dispenser_id}, объем {volume} мкл, циклов {cycles} ===")
     
-    # Параметры: dispenser_id (UINT8), volume (UINT16), cycles (UINT8)
-    params = dispenser_id.to_bytes(1, 'big') + \
-             volume.to_bytes(2, 'big') + \
-             cycles.to_bytes(1, 'big')
+    # Параметры согласно документации: dispenser_id (1 байт) + volume (2 байта) + cycles (1 байт) = 4 байта
+    params = b'\x01\x03\xe8\x05' # 4 байта параметров: ID=1, Volume=1000 (0x03E8), Cycles=5 (0x05)
     
     if not send_and_wait_ack(0x2000, params):
         return False

@@ -2,6 +2,7 @@
 #include "command_parser.h"
 #include "dispatcher_io.h"
 #include "job_manager.h"
+#include "parameter_parser.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -280,6 +281,16 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     		//Отправляем ACK
     		Dispatcher_SendAck(command_code);
     		osDelay(1); // Уступаем CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
+
+    		// added 03/02/2026
+    		// NEW: Call Parameters_Parse to process raw parameters into structured ones
+    		// Pass the raw parameters and their length to Parameters_Parse
+    		bool parse_success = Parameters_Parse(&cmd, &packet[7], params_len);
+    		if (!parse_success) {
+    			// If parsing fails, send NACK for invalid parameters
+    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+    			return;
+    			}
 
     		// Start JobManager to execute the recipe
     		if (JobManager_StartNewJob(&cmd) == 0) {

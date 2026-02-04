@@ -2,7 +2,7 @@
 Debug/
 Release/
 .venv/
-readmy/
+readme/
 
 # STM32CubeIDE project files
 .cproject
