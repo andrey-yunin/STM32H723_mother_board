@@ -1,5 +1,6 @@
 import serial
 import time
+import struct # ADDED: Required for struct.pack
 import sys
 import threading
 import queue
@@ -345,6 +346,25 @@ def test_unknown_command():
     print("Тест неизвестной команды пройден успешно.")
     return True
 
+# --- Тест команды WASH_STATION_WASH ---
+def test_wash_station_wash_command(cycles: int, cuvette: int):
+    print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
+    
+    # cycles (1 байт) + cuvette (2 байта, little-endian)
+    params = struct.pack('>BH', cycles, cuvette) # Changed to big-endian '>' 
+    
+    if not send_and_wait_ack(0x4000, params):
+        return False
+    
+    # TODO: Добавить проверку логов устройства для верификации динамических параметров
+    # JobManager должен будет отправить логи о ROTATE_MOTOR с правильным количеством шагов
+    # и о работе насосов.
+    if not wait_for_done(0x4000):
+        return False
+    
+    print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
+    return True
+
 def test_combined_scenario():
     print("\n=== Комбинированный сценарий: INIT + GET_STATUS ===")
     # Отправляем INIT
@@ -420,6 +440,11 @@ def main():
 
         # Тест неизвестной команды
         if all_tests_passed and not test_unknown_command():
+            all_tests_passed = False
+
+        # Запускаем индивидуальный тест WASH_STATION_WASH
+        # Пример: 3 цикла, кювета 10
+        if all_tests_passed and not test_wash_station_wash_command(3, 10):
             all_tests_passed = False
 
         # Запускаем комбинированный сценарий

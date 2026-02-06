@@ -27,6 +27,14 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 		 },
 
 
+		 // WASH_STATION_WASH descriptor: added 05/02/2026
+		 {.command_code = 0x4000, // Код команды WASH_STATION_WASH
+				 .min_params_len = 3,   // cycles (1) + cuvette (2) = 3 байта
+				 .max_params_len = 3,
+				 .recipe_id = RECIPE_WASH_STATION_WASH
+				 },
+
+
 		 // Здесь будут добавляться другие команды-рецепты
 
 		 };

@@ -114,6 +114,7 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 {
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
+
 			case PARAM_SOURCE_CMD_INIT_MASK:
 				// This source is designed for the overall mask (e.g., in INIT command),
 				// not usually for a single motor_id value.
@@ -121,9 +122,18 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 				// it would be returned here. For specific motor_id, this case is less likely
 				// but included for completeness.
 				return job->initial_cmd.args.init.modules_mask;
+
 			case PARAM_SOURCE_CMD_DISPENSER_ID:
 				return job->initial_cmd.args.dispenser_wash.dispenser_id;
+
+			 case PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES: // <-- added 05/02/2026
+				 return job->initial_cmd.args.wash_station_wash.cycles;
+
+
+
 				// Add other uint8_t sources here as needed for other commands
+
+
 				default:
 					break; // Fall through to static_value if source not found or is static
 					}
@@ -135,11 +145,16 @@ static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t
 {
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
+
 			case PARAM_SOURCE_CMD_DISPENSER_CYCLES:
 				return job->initial_cmd.args.dispenser_wash.cycles;
-				default:
-					break;
-					}
+
+			case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // <-- added 05/02/2026
+				return job->initial_cmd.args.wash_station_wash.cuvette;
+
+			default:
+				break;
+				}
 		}
 	return static_value;
 }
@@ -149,6 +164,8 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
 		// Add int32_t sources here as needed
+		case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // Added 06/02.2026 for WASH_STATION_WASH cuvette
+			return (int32_t)job->initial_cmd.args.wash_station_wash.cuvette; // Cast to int32_t
 		default:
 			break;
 			}

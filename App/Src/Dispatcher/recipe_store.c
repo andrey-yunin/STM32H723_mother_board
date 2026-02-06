@@ -158,6 +158,70 @@ const ProcessStep_t g_recipe_dispenser_wash[] = {
 		{ .atomic_actions = NULL, .num_actions = 0 }
 		};
 
+/**
+ * @brief Рецепт: Промывка кюветы на моющей станции (WASH_STATION_WASH). added 05/02/20276
+ *
+ * @note Это шаблон для ОДНОГО цикла промывки. JobManager будет использовать
+ *       параметры из команды (cycles, cuvette), чтобы адаптировать
+ *       этот шаблон при выполнении.
+ */
+
+const ProcessStep_t g_recipe_wash_station_wash[] = {
+		// Шаг 1: Поворот реакционного диска (Мотор 3) к моющей станции.
+		// `steps` будут взяты из значения cuvette в команде.
+		{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_ROTATE_MOTOR,
+						.params.rotate_motor = {
+							.motor_id = 3, .motor_id_source = PARAM_SOURCE_STATIC, // ID мотора для реакционного диска (предположение)
+							.steps = 3000, .steps_source = PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE, // Шаги берутся из параметра cuvette
+							.speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована}
+					}}
+				},
+					.num_actions = 1
+					},
+
+		// Шаг 2: Заполнение кюветы (Насос 2).
+		// Длительность заполнения фиксирована.
+    	{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_START_PUMP,
+						.params.pump = { .pump_id = 2, .pump_id_source = PARAM_SOURCE_STATIC } }, // ID насоса заполнения (предположение)
+					{ .action = ACTION_WAIT_MS,    .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC }} // Задержка фиксирована
+					},
+					.num_actions = 2
+					},
+
+		// Шаг 3: Остановка насоса заполнения.
+		{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = 2, .pump_id_source = PARAM_SOURCE_STATIC } } // ID насоса заполнения (предположение)
+					},
+					.num_actions = 1
+					},
+
+		// Шаг 4: Слив из кюветы (Насос 3).
+		// TODO: delay_ms должен быть рассчитан динамически.
+		{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_START_PUMP, .params.pump = { .pump_id = 3, .pump_id_source = PARAM_SOURCE_STATIC } },
+					{ .action = ACTION_WAIT_MS, .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC } }
+					},
+					.num_actions = 2
+					},
+
+		// Шаг 5: Остановка насоса слива.
+		{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = 3, .pump_id_source = PARAM_SOURCE_STATIC } }
+					},
+					.num_actions = 1
+					},
+
+		// Маркер конца рецепта.
+		{
+				.atomic_actions = NULL, .num_actions = 0 }
+		};
 
 
 
@@ -188,6 +252,9 @@ const ProcessStep_t g_recipe_dispenser_wash[] = {
 
         case RECIPE_DISPENSER_WASH:
         	return g_recipe_dispenser_wash;
+
+        case RECIPE_WASH_STATION_WASH: // added 05/02/2026
+        	return g_recipe_wash_station_wash;
 
         // --- [ADD_NEW_COMMAND] ---
         // 4. Добавьте `case` для вашего нового рецепта здесь

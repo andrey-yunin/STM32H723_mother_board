@@ -29,6 +29,17 @@ typedef struct {
     uint16_t cycles;
 } ParsedArgs_DispenserWash;
 
+
+/**
+ * @brief Разобранные параметры для команды WASH_STATION_WASH (0x4000) added 05/02/2026
+ */
+typedef struct {
+	uint8_t cycles;
+	uint16_t cuvette;
+
+} ParsedArgs_WashStationWash;
+
+
 // --- КОНЕЦ НОВЫХ СТРУКТУР ---
 
  /**
@@ -40,6 +51,7 @@ typedef enum {
     RECIPE_ASPIRATE,
     RECIPE_INITIALIZE_SYSTEM,
 	RECIPE_DISPENSER_WASH,
+	RECIPE_WASH_STATION_WASH, // added 05/02/2026
 
 	// --- [ADD_NEW_COMMAND] ---
 	// 1. Добавьте новый ID рецепта здесь
@@ -106,6 +118,7 @@ typedef struct {
 			// --- НОВЫЕ ПОЛЯ --- 29.01.2026
 			ParsedArgs_Init init;
 			ParsedArgs_DispenserWash dispenser_wash;
+			ParsedArgs_WashStationWash wash_station_wash; // <-- added 05/02/2026
 			// Здесь будут добавляться другие команды
 			} args;
 } UniversalCommand_t;

@@ -23,7 +23,16 @@
      PARAM_SOURCE_CMD_DISPENSER_ID,     // Значение берется из cmd.args.dispenser_wash.dispenser_id
      PARAM_SOURCE_CMD_DISPENSER_VOLUME, // Значение берется из cmd.args.dispenser_wash.volume
      PARAM_SOURCE_CMD_DISPENSER_CYCLES, // Значение берется из cmd.args.dispenser_wash.cycles
-    // Добавьте другие источники по мере необходимости
+
+	 // Добавьте другие источники по мере необходимости
+
+	 // --- параметры для WASH_STATION_WASH --- added 05/02/2026
+	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES, // Это относится к циклам из команды, которые будут обрабатываться JobManager_Run для повторения рецепта
+	 PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS,
+	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE,
+	 // ---конец параметров для WASH_STATION_WASH ---
+
+	 PARAM_SOURCE_MAX
 	 } ParamSource_t;
 	 // --- КОНЕЦ НОВОГО ПЕРЕЧИСЛЕНИЯ ---
 
