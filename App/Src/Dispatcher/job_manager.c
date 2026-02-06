@@ -149,8 +149,8 @@ static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t
 			case PARAM_SOURCE_CMD_DISPENSER_CYCLES:
 				return job->initial_cmd.args.dispenser_wash.cycles;
 
-			case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // <-- added 05/02/2026
-				return job->initial_cmd.args.wash_station_wash.cuvette;
+	//		case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // <-- added 05/02/2026
+		//		return job->initial_cmd.args.wash_station_wash.cuvette;
 
 			default:
 				break;
@@ -164,8 +164,8 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
 		// Add int32_t sources here as needed
-		case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // Added 06/02.2026 for WASH_STATION_WASH cuvette
-			return (int32_t)job->initial_cmd.args.wash_station_wash.cuvette; // Cast to int32_t
+		case PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS: // added 06.02.2026 Changed from CUVETTE to ROTATE_STEPS
+			return (int32_t)job->initial_cmd.args.wash_station_wash.rotate_steps; // Direct access to int32_t rotate_steps
 		default:
 			break;
 			}

@@ -174,8 +174,8 @@ const ProcessStep_t g_recipe_wash_station_wash[] = {
 					{ .action = ACTION_ROTATE_MOTOR,
 						.params.rotate_motor = {
 							.motor_id = 3, .motor_id_source = PARAM_SOURCE_STATIC, // ID мотора для реакционного диска (предположение)
-							.steps = 3000, .steps_source = PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE, // Шаги берутся из параметра cuvette
-							.speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована}
+							.steps = 3000, .steps_source = PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
+							.speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
 					}}
 				},
 					.num_actions = 1

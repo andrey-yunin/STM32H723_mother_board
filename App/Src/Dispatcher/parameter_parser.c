@@ -8,6 +8,8 @@
 #include "parameter_parser.h"
 #include "command_parser.h"
 #include <string.h> // для memcpy
+#include "param_translator.h" // added 06/02/2026
+
 /*
 // Вспомогательная функция для безопасного чтения 4-байтного числа
 static uint32_t read_uint32_from_buffer(const uint8_t* buffer) {
@@ -20,7 +22,7 @@ static uint32_t read_uint32_from_buffer(const uint8_t* buffer) {
 
 // Вспомогательная функция для безопасного чтения 2-байтного числа
 static uint16_t read_uint16_from_buffer(const uint8_t* buffer) {
-	return ((uint16_t)buffer[1] << 8) | buffer[0];
+	return ((uint16_t)buffer[0] << 8) | buffer[1];
 	}
 
 
@@ -66,7 +68,9 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
      case 0x4000: // Команда WASH_STATION_WASH <-- added 05/02/2026
     	 if (params_len == 3) {
     		 cmd->args.wash_station_wash.cycles = raw_params[0];
-    		 cmd->args.wash_station_wash.cuvette = read_uint16_from_buffer(&raw_params[1]); // 2 байта
+
+    		 // Вычисляем шаги поворота диска, используя функцию из param_translator
+    		 cmd->args.wash_station_wash.rotate_steps = ParamTranslator_CuvetteToSteps(read_uint16_from_buffer(&raw_params[1]));
     		 cmd->args_type = ARGS_TYPE_PARSED;
     		 }
     	 else {

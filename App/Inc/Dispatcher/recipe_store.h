@@ -28,8 +28,7 @@
 
 	 // --- параметры для WASH_STATION_WASH --- added 05/02/2026
 	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES, // Это относится к циклам из команды, которые будут обрабатываться JobManager_Run для повторения рецепта
-	 PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS,
-	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE,
+	 PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Для рассчитанных шагов поворота диска
 	 // ---конец параметров для WASH_STATION_WASH ---
 
 	 PARAM_SOURCE_MAX

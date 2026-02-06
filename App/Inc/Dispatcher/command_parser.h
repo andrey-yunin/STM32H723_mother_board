@@ -35,8 +35,7 @@ typedef struct {
  */
 typedef struct {
 	uint8_t cycles;
-	uint16_t cuvette;
-
+	int32_t rotate_steps; // Рассчитанные шаги для поворота реакционного диска added 06/02/2026
 } ParsedArgs_WashStationWash;
 
 
