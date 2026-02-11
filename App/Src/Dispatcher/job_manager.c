@@ -166,6 +166,9 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		// Add int32_t sources here as needed
 		case PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS: // added 06.02.2026 Changed from CUVETTE to ROTATE_STEPS
 			return (int32_t)job->initial_cmd.args.wash_station_wash.rotate_steps; // Direct access to int32_t rotate_steps
+
+		case PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS: // added 11/02/2026
+			return job->initial_cmd.args.sample_rotate.rotate_steps;
 		default:
 			break;
 			}
@@ -179,6 +182,7 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 		switch (source) {
 			case PARAM_SOURCE_CMD_DISPENSER_VOLUME:
 				return job->initial_cmd.args.dispenser_wash.volume;
+
 				// Add other uint32_t sources here as needed
 				// For example:
 				// case PARAM_SOURCE_CMD_WAIT_DELAY: return job->initial_cmd.args.wait.delay_ms;

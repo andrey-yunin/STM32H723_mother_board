@@ -38,6 +38,15 @@ typedef struct {
 	int32_t rotate_steps; // Рассчитанные шаги для поворота реакционного диска added 06/02/2026
 } ParsedArgs_WashStationWash;
 
+/**
+* @brief Разобранные параметры для команды SAMPLE_ROTATE (0x5110) added 11/02/2026
+* Содержит рассчитанные шаги для поворота диска образцов.
+*/
+typedef struct {
+	int32_t rotate_steps;
+	} ParsedArgs_SampleRotate;
+
+
 
 // --- КОНЕЦ НОВЫХ СТРУКТУР ---
 
@@ -51,6 +60,8 @@ typedef enum {
     RECIPE_INITIALIZE_SYSTEM,
 	RECIPE_DISPENSER_WASH,
 	RECIPE_WASH_STATION_WASH, // added 05/02/2026
+	RECIPE_SAMPLE_ROTATE, // added 11/02/2026 ID для команды поворота диска образцов
+
 
 	// --- [ADD_NEW_COMMAND] ---
 	// 1. Добавьте новый ID рецепта здесь
@@ -99,7 +110,7 @@ typedef struct {
  */
 
 typedef struct {
-	uint16_t command_code; // <-- Добавлено поле command_code 22.01.2026
+	uint16_t command_code; // <-- aded command_code 22.01.2026
 	RecipeID_t recipe_id;
 
 	// Указывает, какой тип данных находится в union 'args'
@@ -118,6 +129,9 @@ typedef struct {
 			ParsedArgs_Init init;
 			ParsedArgs_DispenserWash dispenser_wash;
 			ParsedArgs_WashStationWash wash_station_wash; // <-- added 05/02/2026
+			ParsedArgs_SampleRotate sample_rotate; // Добавлено поле для поворота диска образцов
+
+
 			// Здесь будут добавляться другие команды
 			} args;
 } UniversalCommand_t;

@@ -23,6 +23,12 @@
 #define PT_PUMP_DEFAULT_FLOW_RATE_UL_PER_MS     10  // Example: 10 microliters per millisecond
 #define PT_PUMP_MAX_VOLUME_UL                   5000 // Example: Max volume a pump might handle
 
+// Константа, определяющая количество шагов мотора на один слот диска.
+// ВАЖНО: Это значение - заглушка! Его необходимо будет откалибровать
+// в соответствии с реальной механикой и драйвером мотора.
+#define SAMPLE_DISK_STEPS_PER_SLOT 100
+
+
 // --- Translation Function Declarations ---
 
 /**
@@ -44,6 +50,20 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
  *                  Returns 0 if volume_ul is 0 or calculation is impossible (e.g., zero flow rate).
  */
 uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump_id);
+
+
+/**
+ * @brief Преобразует номер слота на диске образцов в шаги мотора.
+ *
+ * @param slot_number Номер слота (позиции) на диске образцов.
+ * @return int32_t Количество шагов для поворота мотора.
+ */
+ int32_t ParamTranslator_SampleDiskSlotToSteps(uint16_t slot_number);
+
+
+
+
+
 
 
 // --- Add more translation functions as identified by the command analysis ---

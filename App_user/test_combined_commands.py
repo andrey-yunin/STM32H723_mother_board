@@ -6,7 +6,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM4' 
+SERIAL_PORT = '/dev/ttyACM0' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
@@ -260,6 +260,23 @@ def wait_for_data_and_done(command_code: int, expected_data_len: int, expected_d
     print(f"ERROR: Таймаут ожидания DATA и/или DONE для команды 0x{command_code:04x}.")
     return False, None
 
+# --- Вспомогательная функция для ожидания текстовых логов ---
+def wait_for_log_message(partial_log: str, timeout: int = 5) -> bool:
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "text":
+                print(f"DEVICE: {msg['content']}")
+                if partial_log in msg["content"]:
+                    return True
+            elif msg["type"] == "binary":
+                # Print binary messages too for debug, if not the expected one
+                print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    return False
+
 # --- ТЕСТОВЫЕ СЦЕНАРИИ ---
 def test_init_command(mask: int):
     print("\n=== Тест команды INIT ===")
@@ -346,23 +363,49 @@ def test_unknown_command():
     print("Тест неизвестной команды пройден успешно.")
     return True
 
-# --- Тест команды WASH_STATION_WASH ---
 def test_wash_station_wash_command(cycles: int, cuvette: int):
     print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
     
-    # cycles (1 байт) + cuvette (2 байта, little-endian)
+    # cycles (1 байт) + cuvette (2 байта, big-endian)
     params = struct.pack('>BH', cycles, cuvette) # Changed to big-endian '>' 
     
     if not send_and_wait_ack(0x4000, params):
         return False
     
-    # TODO: Добавить проверку логов устройства для верификации динамических параметров
     # JobManager должен будет отправить логи о ROTATE_MOTOR с правильным количеством шагов
-    # и о работе насосов.
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:3, Steps:" # ID 3 for reaction disk
+    if not wait_for_log_message(expected_log_part, timeout=5): # timeout for log message
+        print(f"ERROR: Log message '{expected_log_part}' not found in DEVICE logs for WASH_STATION_WASH.")
+        return False
+
     if not wait_for_done(0x4000):
         return False
     
     print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
+    return True
+
+# --- Тест команды SAMPLE_ROTATE ---
+def test_sample_rotate_command(slot_number: int):
+    print(f"\n=== Тест команды SAMPLE_ROTATE (0x5110) для слота {slot_number} ===")
+    command_code = 0x5110
+
+    # slot (2 байта, big-endian, как read_uint16_from_buffer в parameter_parser.c)
+    params = struct.pack('>H', slot_number) # >H означает unsigned short, big-endian
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    # Ожидаем логи, подтверждающие выполнение ACTION_ROTATE_MOTOR для SAMPLE_DISK_MOTOR_ID (4)
+    # job_id будет динамическим, поэтому ищем общую часть лога
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:4, Steps:"
+    if not wait_for_log_message(expected_log_part, timeout=5): # timeout for log message
+        print(f"ERROR: Log message '{expected_log_part}' not found in DEVICE logs for SAMPLE_ROTATE.")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест SAMPLE_ROTATE для слота {slot_number} пройден успешно ===")
     return True
 
 def test_combined_scenario():
@@ -445,6 +488,10 @@ def main():
         # Запускаем индивидуальный тест WASH_STATION_WASH
         # Пример: 3 цикла, кювета 10
         if all_tests_passed and not test_wash_station_wash_command(3, 10):
+            all_tests_passed = False
+
+        # Запускаем индивидуальный тест SAMPLE_ROTATE
+        if all_tests_passed and not test_sample_rotate_command(5): # Тест для слота 5
             all_tests_passed = False
 
         # Запускаем комбинированный сценарий

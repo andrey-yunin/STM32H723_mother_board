@@ -78,6 +78,19 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		 }
     	 break;
 
+    case 0x5110: // SAMPLE_ROTATE command
+    	if (params_len == 2) {
+    		uint16_t received_slot = read_uint16_from_buffer(&raw_params[0]);
+    		cmd->args.sample_rotate.rotate_steps = ParamTranslator_SampleDiskSlotToSteps(received_slot);
+    		cmd->args_type = ARGS_TYPE_PARSED;
+    		} else {
+    			success = false;
+    			}
+    	break;
+
+
+
+
     	 // --- [ADD_NEW_PARSER] ---
 		 // Здесь будут добавляться case для других команд
 

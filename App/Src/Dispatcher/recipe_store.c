@@ -223,6 +223,27 @@ const ProcessStep_t g_recipe_wash_station_wash[] = {
 				.atomic_actions = NULL, .num_actions = 0 }
 		};
 
+// Определение шагов для рецепта SAMPLE_ROTATE (0x5110) added 11/02/2026
+
+const ProcessStep_t g_recipe_sample_rotate[] = {
+		{ .atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					.motor_id = 4,       // Идентификатор мотора диска образцов (статический)
+					.motor_id_source = PARAM_SOURCE_STATIC, // Источник ID мотора - статический
+					.steps = 0,                             // Статическое значение будет перезаписано динамическим
+					.steps_source = PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // Шаги из команды SAMPLE_ROTATE
+					.speed = 1000,                          // Скорость вращения (статическая)
+					.speed_source = PARAM_SOURCE_STATIC     // Источник скорости - статическая
+					} }
+			}, .num_actions = 1 },
+			// Маркер конца рецепта
+			{ .atomic_actions = NULL, .num_actions = 0 }
+		};
+
+
+
+
+
 
 
 // --- [ADD_NEW_COMMAND] ---
@@ -255,6 +276,10 @@ const ProcessStep_t g_recipe_wash_station_wash[] = {
 
         case RECIPE_WASH_STATION_WASH: // added 05/02/2026
         	return g_recipe_wash_station_wash;
+
+        case RECIPE_SAMPLE_ROTATE: // <-- added 11/02/2026
+        	return g_recipe_sample_rotate;
+
 
         // --- [ADD_NEW_COMMAND] ---
         // 4. Добавьте `case` для вашего нового рецепта здесь

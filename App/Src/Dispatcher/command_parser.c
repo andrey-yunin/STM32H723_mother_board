@@ -34,6 +34,12 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				 .recipe_id = RECIPE_WASH_STATION_WASH
 				 },
 
+		// SAMPLE_ROTATE descriptor: added 11/02/2026
+		{.command_code = 0x5110, // Код команды SAMPLE_ROTATE
+				.min_params_len = 2,   // slot (2 байта)
+				.max_params_len = 2,
+				.recipe_id = RECIPE_SAMPLE_ROTATE
+				},
 
 		 // Здесь будут добавляться другие команды-рецепты
 
