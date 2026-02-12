@@ -29,6 +29,13 @@
 #define SAMPLE_DISK_STEPS_PER_SLOT 100
 
 
+// Константы для трансляции параметров дозатора (заглушки)
+#define DISPENSER_ROT_STEPS_PER_SLOT 200    // Шагов на слот для поворота дозатора
+#define DISPENSER_Z_STEPS_DOWN       300    // Шагов для опускания иглы дозатора
+#define DISPENSER_Z_STEPS_UP         -300    // Шагов для подъема иглы дозатора (величина)
+#define PUMP_MS_PER_UL               10     // мс работы насоса на 1 микролитр
+
+
 // --- Translation Function Declarations ---
 
 /**
@@ -49,7 +56,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
  * @return uint32_t The duration in milliseconds for the pump to operate.
  *                  Returns 0 if volume_ul is 0 or calculation is impossible (e.g., zero flow rate).
  */
-uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump_id);
+//uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump_id);
 
 
 /**
@@ -61,8 +68,44 @@ uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump
  int32_t ParamTranslator_SampleDiskSlotToSteps(uint16_t slot_number);
 
 
+ /**
+  * @brief Преобразует тип источника и позицию в шаги вращения дозатора.
+  *
+  * @param source_type Тип источника (например, диск образцов, реагентов).
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.
+  */
+  int32_t ParamTranslator_DispenserSlotToRotateSteps(uint8_t source_type, uint16_t position);
 
 
+ /**
+  * @brief Преобразует тип источника и позицию в шаги опускания иглы дозатора.
+  *
+  * @param source_type Тип источника.
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для опускания иглы (положительное значение).
+  */
+  int32_t ParamTranslator_DispenserZToStepsDown(uint8_t source_type, uint16_t position);
+
+
+ /**
+  * @brief Преобразует тип источника и позицию в шаги подъема иглы дозатора.
+  *
+  * @param source_type Тип источника.
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для подъема иглы (положительное значение).
+  */
+  int32_t ParamTranslator_DispenserZToStepsUp(uint8_t source_type, uint16_t position);
+
+
+  /**
+   * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах.
+   *
+   * @param dispenser_id ID дозатора (может влиять на калибровку насоса).
+   * @param volume Объем в микролитрах.
+   * @return uint32_t Длительность работы насоса в мс.
+   */
+  uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume);
 
 
 

@@ -41,6 +41,14 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				.recipe_id = RECIPE_SAMPLE_ROTATE
 				},
 
+		// DISPENSER_ASPIRATE descriptor: added 11/02/2026
+		{.command_code = 0x2100, // Код команды DISPENSER_ASPIRATE
+				.min_params_len = 6,   // dispenser_id (1) + source (1) + position (2) + volume (2) = 6 байт
+				.max_params_len = 6,
+				.recipe_id = RECIPE_DISPENSER_ASPIRATE
+				},
+
+
 		 // Здесь будут добавляться другие команды-рецепты
 
 		 };

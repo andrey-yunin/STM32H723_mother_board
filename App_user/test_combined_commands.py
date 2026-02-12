@@ -6,7 +6,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM0' 
+SERIAL_PORT = '/dev/ttyACM4' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
@@ -16,7 +16,7 @@ LISTEN_DURATION = 5   # Продолжительность прослушива�
 received_messages_queue = queue.Queue()
 # Флаг для остановки потока прослушивания
 stop_listening_event = threading.Event()
-# Серийный порт
+# Серийный портPARAM_SOURCE_CMD_DISPENSER_ASPIRATE_POSITIO
 ser = None
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ПРОТОКОЛА ---
@@ -384,7 +384,6 @@ def test_wash_station_wash_command(cycles: int, cuvette: int):
     print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
     return True
 
-# --- Тест команды SAMPLE_ROTATE ---
 def test_sample_rotate_command(slot_number: int):
     print(f"\n=== Тест команды SAMPLE_ROTATE (0x5110) для слота {slot_number} ===")
     command_code = 0x5110
@@ -406,6 +405,31 @@ def test_sample_rotate_command(slot_number: int):
         return False
 
     print(f"=== Тест SAMPLE_ROTATE для слота {slot_number} пройден успешно ===")
+    return True
+
+# --- Тест команды DISPENSER_ASPIRATE ---
+def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: int):
+    print(f"\n=== Тест команды DISPENSER_ASPIRATE (0x2100) для дозатора {disp_id}, источник 0x{src_type:02x}, позиция {pos}, объем {vol} мкл ===")
+    command_code = 0x2100
+
+    # dispenser_id (1) + source (1) + position (2) + volume (2) = 6 байт
+    params = struct.pack('>BBHH', disp_id, src_type, pos, vol)
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    # Ожидаем лог о ключевом действии - запуске насоса.
+    # Это более надежно, чем проверять все шаги по отдельности.
+    # disp_id 1 маппируется на pump_id 1
+    expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
+    if not wait_for_log_message(expected_log_part, timeout=10):
+        print(f"ERROR: Log message part '{expected_log_part}' not found for DISPENSER_ASPIRATE.")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест DISPENSER_ASPIRATE для дозатора {disp_id} пройден успешно ===")
     return True
 
 def test_combined_scenario():
@@ -492,6 +516,11 @@ def main():
 
         # Запускаем индивидуальный тест SAMPLE_ROTATE
         if all_tests_passed and not test_sample_rotate_command(5): # Тест для слота 5
+            all_tests_passed = False
+
+        # Запускаем индивидуальный тест DISPENSER_ASPIRATE
+        # Пример: дозатор 1, источник 0x03 (диск образцов), позиция 5, объем 10 мкл
+        if all_tests_passed and not test_dispenser_aspirate_command(1, 0x03, 5, 10):
             all_tests_passed = False
 
         # Запускаем комбинированный сценарий

@@ -88,8 +88,28 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     			}
     	break;
 
+    case 0x2100: // DISPENSER_ASPIRATE command
+    	if (params_len == 6) {
+    		uint8_t received_dispenser_id = raw_params[0];
+    		uint8_t received_source_type = raw_params[1];
+    		uint16_t received_position = read_uint16_from_buffer(&raw_params[2]);
+    		uint16_t received_volume = read_uint16_from_buffer(&raw_params[4]);
 
+    		cmd->args.dispenser_aspirate.dispenser_id = received_dispenser_id;
+    		cmd->args.dispenser_aspirate.source_type = received_source_type;
 
+    		// Вызов функций транслятора для получения низкоуровневых параметров
+    		cmd->args.dispenser_aspirate.rotate_steps = ParamTranslator_DispenserSlotToRotateSteps(received_source_type, received_position);
+    		cmd->args.dispenser_aspirate.steps_down = ParamTranslator_DispenserZToStepsDown(received_source_type, received_position);
+    		cmd->args.dispenser_aspirate.steps_up = ParamTranslator_DispenserZToStepsUp(received_source_type, received_position);
+    		cmd->args.dispenser_aspirate.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
+
+    		cmd->args_type = ARGS_TYPE_PARSED;
+    		}
+    	else {
+    		success = false;
+    		}
+    	break;
 
     	 // --- [ADD_NEW_PARSER] ---
 		 // Здесь будут добавляться case для других команд

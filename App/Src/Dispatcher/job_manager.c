@@ -126,9 +126,14 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 			case PARAM_SOURCE_CMD_DISPENSER_ID:
 				return job->initial_cmd.args.dispenser_wash.dispenser_id;
 
-			 case PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES: // <-- added 05/02/2026
+			case PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES: // <-- added 05/02/2026
 				 return job->initial_cmd.args.wash_station_wash.cycles;
 
+			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID: // <-- added 12/02/2026
+				 return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
+
+			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE: // <-- added 12/02/2026
+				 return job->initial_cmd.args.dispenser_aspirate.source_type;
 
 
 				// Add other uint8_t sources here as needed for other commands
@@ -167,8 +172,18 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS: // added 06.02.2026 Changed from CUVETTE to ROTATE_STEPS
 			return (int32_t)job->initial_cmd.args.wash_station_wash.rotate_steps; // Direct access to int32_t rotate_steps
 
-		case PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS: // added 11/02/2026
+		case PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS:                         // added 11/02/2026
 			return job->initial_cmd.args.sample_rotate.rotate_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS:             // added 12/02/2026
+			return job->initial_cmd.args.dispenser_aspirate.rotate_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN:               // added 12/02/2026
+			return job->initial_cmd.args.dispenser_aspirate.steps_down;
+
+		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP:                 // added 12/02/2026
+			return job->initial_cmd.args.dispenser_aspirate.steps_up;
+
 		default:
 			break;
 			}
@@ -182,6 +197,11 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 		switch (source) {
 			case PARAM_SOURCE_CMD_DISPENSER_VOLUME:
 				return job->initial_cmd.args.dispenser_wash.volume;
+
+
+			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS: // added 12/02/2026
+				return job->initial_cmd.args.dispenser_aspirate.pump_duration_ms;
+
 
 				// Add other uint32_t sources here as needed
 				// For example:

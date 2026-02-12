@@ -241,8 +241,92 @@ const ProcessStep_t g_recipe_sample_rotate[] = {
 		};
 
 
+/**
+ * @brief Рецепт: Забор образца/реагента дозатором. added 11/02/2026
+ * Выполняется командой DISPENSER_ASPIRATE (0x2100).
+ */
+
+const ProcessStep_t g_recipe_dispenser_aspirate[] = {
+		// Шаг 1: Поворот дозатора к источнику (если требуется)
+		// Предполагается, что мотор ID 5 - это ось вращения дозатора (предположение).
+
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					.motor_id = 5, // ID мотора для оси X дозатора (предположение)
+					.motor_id_source = PARAM_SOURCE_STATIC,
+					.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром из cmd->args.dispenser_aspirate.rotate_steps
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS, // Источник для rotate_steps
+
+					.speed = 500, // Статическая скорость
+					.speed_source = PARAM_SOURCE_STATIC
+					}}
+				},
+				.num_actions = 1 // Одно движение
+		},
 
 
+		// Шаг 2: Опускание иглы (Z-ось)
+		// Предполагается, что мотор ID 3 - это ось Z дозатора.
+
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					.motor_id = 3, // ID мотора для оси X дозатора (предположение)
+					.motor_id_source = PARAM_SOURCE_STATIC,
+					.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром из cmd->args.dispenser_aspirate.steps_down
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN, // Источник для steps_down,
+					.speed = 200, // Статическая скорость
+					.speed_source = PARAM_SOURCE_STATIC
+					}}
+				},
+				.num_actions = 1 // Одно движение
+		},
+
+		// Шаг 3: Запуск насоса для забора жидкости и ожидание
+
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_START_PUMP, .params.pump = {
+					.pump_id = 0,  // Статическое значение (заглушка), будет перезаписано динамическим параметром
+					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID
+					}},
+
+			{ .action = ACTION_WAIT_MS, .params.wait = {
+					.delay_ms = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
+					.delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS // Источник для pump_duration_ms
+
+					}}
+				},
+				.num_actions = 2 // Насос запускается и ожидание происходит одновременно
+			},
+
+		// Шаг 3: Остановка насоса
+
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_STOP_PUMP, .params.pump = {
+					.pump_id = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
+					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID
+					}}
+				},
+				.num_actions = 1
+			},
+
+			 // Шаг 5: Подъем иглы (Z-ось)
+			{
+				.atomic_actions = (const AtomicAction_t[]){
+					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+						.motor_id = 3, // ID мотора для оси Z дозатора (предположение)
+						.motor_id_source = PARAM_SOURCE_STATIC,
+						.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
+						.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP, // Источник для steps_up
+						.speed = 200, // Статическая скорость
+						.speed_source = PARAM_SOURCE_STATIC
+					}}
+				},
+				.num_actions = 1
+			},
+
+		// Маркер конца рецепта
+			{ .atomic_actions = NULL, .num_actions = 0 }
+		};
 
 
 
@@ -279,6 +363,10 @@ const ProcessStep_t g_recipe_sample_rotate[] = {
 
         case RECIPE_SAMPLE_ROTATE: // <-- added 11/02/2026
         	return g_recipe_sample_rotate;
+
+        case RECIPE_DISPENSER_ASPIRATE: // <-- added 11/02/2026
+        	return g_recipe_dispenser_aspirate;
+
 
 
         // --- [ADD_NEW_COMMAND] ---

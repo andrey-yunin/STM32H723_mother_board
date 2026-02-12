@@ -21,6 +21,9 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
      return (int32_t)cuvette_number * PT_REACTION_DISK_STEPS_PER_CUVETTE_UNIT;
 }
 
+/** Пока закоментировали данную функцию до момента полной реализации процесса ## 3. Промывка системы
+ *
+ *
  uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump_id) {
      if (volume_ul == 0) {
          return 0; // Нет объема, нет продолжительности
@@ -42,7 +45,10 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
      return (uint32_t)volume_ul / PT_PUMP_DEFAULT_FLOW_RATE_UL_PER_MS;
      }
 
+ */
+
  /**
+  *
   * @brief Преобразует номер слота на диске образцов в шаги мотора.
   */
   int32_t ParamTranslator_SampleDiskSlotToSteps(uint16_t slot_number)
@@ -59,6 +65,73 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  }
 
 
+  /**
+   * @brief Преобразует тип источника и позицию в шаги вращения дозатора.
+   */
+  int32_t ParamTranslator_DispenserSlotToRotateSteps(uint8_t source_type, uint16_t position)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от source_type и position.
+	  // Пока - простая заглушка.
+	  if (position == 0) return 0;
+	  return (int32_t)position * DISPENSER_ROT_STEPS_PER_SLOT;
+	  }
+
+  /**
+   * @brief Преобразует тип источника и позицию в шаги опускания иглы дозатора.
+   */
+  int32_t ParamTranslator_DispenserZToStepsDown(uint8_t source_type, uint16_t position)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от source_type и position.
+	  // Пока - простая заглушка.
+	  return DISPENSER_Z_STEPS_DOWN; // Возвращаем положительное значение
+	  }
+
+  /**
+   * @brief Преобразует тип источника и позицию в шаги подъема иглы дозатора.
+   */
+  int32_t ParamTranslator_DispenserZToStepsUp(uint8_t source_type, uint16_t position)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от source_type и position.
+	  // Пока - простая заглушка.
+	  return DISPENSER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
+	  }
+
+  /**
+   * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах.
+   */
+  uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume)
+  {
+	  uint8_t actual_pump_id;
+	  // Реализовать маппинг dispenser_id -> actual_pump_id
+	  // TODO: Здесь должна быть более сложная логика маппинга,
+	  // возможно, из конфига или таблицы.
+	  if (dispenser_id == 1) {
+		  actual_pump_id = 1; // Предполагаем, что дозатор 1 использует насос 1
+		  }
+	  else {
+		  // Для других dispenser_id по умолчанию используем pump_id = 1 или вернем ошибку
+
+		  actual_pump_id = 1; // По умолчанию, чтобы избежать 0 и использовать в расчете
+		  // TODO: Логировать ошибку или вернуть ERR_INVALID_PARAM, если dispenser_id не маппирован.
+		  }
+
+	  // Расчет длительности на основе объема и калибровки для конкретного насоса
+	  // TODO: Implement pump-specific calibration constants (e.g., an array PUMP_CALIBRATION_MS_PER_UL[pump_id])
+
+	  uint32_t ms_per_ul;
+	  // Пример использования actual_pump_id для выбора константы
+	  if (actual_pump_id == 1) { // Калибровка для Pump 1
+		  ms_per_ul = PUMP_MS_PER_UL; // Используем общую константу пока нет специфичных
+		  }
+	  else {
+		  // Для других насосов пока используем общую константу
+		  ms_per_ul = PUMP_MS_PER_UL;
+		  }
+	  if (volume == 0)
+		  return 0;
+
+	  return (uint32_t)volume * ms_per_ul;
+	  }
  // Добавить реализации других функций преобразования здесь
 
 

@@ -32,7 +32,15 @@
 	 // --- Параметры для SAMPLE_ROTATE --- added 11/02/2026
 	 PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // источник для рассчитанных шагов поворота диска образцов
 
-	 	 // Добавьте другие источники по мере необходимости
+	 // --- Параметры для DISPENSER_ASPIRATE --- added 11/02/2026
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID,
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE,
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS,
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN,
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP,
+	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS,
+
+	 // Добавьте другие источники по мере необходимости
 
 	 PARAM_SOURCE_MAX
 	 } ParamSource_t;
