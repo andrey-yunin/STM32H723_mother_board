@@ -135,6 +135,13 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE: // <-- added 12/02/2026
 				 return job->initial_cmd.args.dispenser_aspirate.source_type;
 
+			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID: // <-- added 13/02/2026
+				 return job->initial_cmd.args.dispenser_dispense.dispenser_id;
+
+			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_TARGET_TYPE: // <-- added 13/02/2026
+				 return job->initial_cmd.args.dispenser_dispense.target_type;
+
+
 
 				// Add other uint8_t sources here as needed for other commands
 
@@ -184,6 +191,16 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP:                 // added 12/02/2026
 			return job->initial_cmd.args.dispenser_aspirate.steps_up;
 
+		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS: // <-- added 13/02/2026
+			return job->initial_cmd.args.dispenser_dispense.rotate_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN: // <-- added 13/02/2026
+			return job->initial_cmd.args.dispenser_dispense.steps_down;
+
+		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP: // <-- added 13/02/2026
+			return job->initial_cmd.args.dispenser_dispense.steps_up;
+
+
 		default:
 			break;
 			}
@@ -201,6 +218,10 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 
 			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS: // added 12/02/2026
 				return job->initial_cmd.args.dispenser_aspirate.pump_duration_ms;
+
+			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_PUMP_DURATION_MS: // added 13/02/2026
+				return job->initial_cmd.args.dispenser_dispense.pump_duration_ms;
+
 
 
 				// Add other uint32_t sources here as needed

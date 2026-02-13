@@ -108,6 +108,37 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume);
 
 
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги вращения дозатора.
+  *
+  * @param target_type Тип назначения (например, реакционный диск, станция промывки).
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.
+  */
+  int32_t ParamTranslator_DispenserTargetToRotateSteps(uint8_t target_type, uint16_t position);
+
+
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги опускания иглы дозатора.
+  *
+  * @param target_type Тип назначения.
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для опускания иглы (положительное значение).
+  */
+  int32_t ParamTranslator_DispenserTargetZToStepsDown(uint8_t target_type, uint16_t position);
+
+
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги подъема иглы дозатора.
+  *
+  * @param target_type Тип назначения.
+  * @param position Номер позиции/слота.
+  * @return int32_t Количество шагов для подъема иглы (отрицательное значение).
+  */
+  int32_t ParamTranslator_DispenserTargetZToStepsUp(uint8_t target_type, uint16_t position);
+
+
+
 
 // --- Add more translation functions as identified by the command analysis ---
 // e.g., TemperatureToRawADC(), MicrometersToMotorSteps(), etc.

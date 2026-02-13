@@ -49,7 +49,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 
  /**
   *
-  * @brief Преобразует номер слота на диске образцов в шаги мотора.
+  * @brief Преобразует номер слота на диске образцов в шаги мотора.  added 05/02/2026
   */
   int32_t ParamTranslator_SampleDiskSlotToSteps(uint16_t slot_number)
   {
@@ -66,7 +66,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 
 
   /**
-   * @brief Преобразует тип источника и позицию в шаги вращения дозатора.
+   * @brief Преобразует тип источника и позицию в шаги вращения дозатора. added 11/02/2026
    */
   int32_t ParamTranslator_DispenserSlotToRotateSteps(uint8_t source_type, uint16_t position)
   {
@@ -77,7 +77,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  }
 
   /**
-   * @brief Преобразует тип источника и позицию в шаги опускания иглы дозатора.
+   * @brief Преобразует тип источника и позицию в шаги опускания иглы дозатора. added 11/02/2026
    */
   int32_t ParamTranslator_DispenserZToStepsDown(uint8_t source_type, uint16_t position)
   {
@@ -87,7 +87,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  }
 
   /**
-   * @brief Преобразует тип источника и позицию в шаги подъема иглы дозатора.
+   * @brief Преобразует тип источника и позицию в шаги подъема иглы дозатора. added 11/02/2026
    */
   int32_t ParamTranslator_DispenserZToStepsUp(uint8_t source_type, uint16_t position)
   {
@@ -97,7 +97,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  }
 
   /**
-   * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах.
+   * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах. added 11/02/2026
    */
   uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume)
   {
@@ -132,6 +132,43 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 
 	  return (uint32_t)volume * ms_per_ul;
 	  }
+
+
+
+
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги вращения дозатора. added 13/02/2026
+  */
+
+  int32_t ParamTranslator_DispenserTargetToRotateSteps(uint8_t target_type, uint16_t position)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от target_type и position.
+      // Пока - простая заглушка.
+      if (position == 0) return 0;
+      return (int32_t)position * DISPENSER_ROT_STEPS_PER_SLOT;
+      }
+
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги опускания иглы дозатора. added 13/02/2026
+  */
+  int32_t ParamTranslator_DispenserTargetZToStepsDown(uint8_t target_type, uint16_t position)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от target_type и position.
+	  // Пока - простая заглушка.
+	  return DISPENSER_Z_STEPS_DOWN; // Возвращаем положительное значение
+	  }
+
+ /**
+  * @brief Преобразует тип назначения и позицию в шаги подъема иглы дозатора. added 13/02/2026
+  */
+
+ int32_t ParamTranslator_DispenserTargetZToStepsUp(uint8_t target_type, uint16_t position)
+ {
+	 // TODO: Реализовать логику трансляции в зависимости от target_type и position.
+	 // Пока - простая заглушка.
+	 return DISPENSER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
+	 }
+
  // Добавить реализации других функций преобразования здесь
 
 

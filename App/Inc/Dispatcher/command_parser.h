@@ -57,10 +57,20 @@ typedef struct {
 	int32_t  steps_down;         // Рассчитанные шаги для опускания иглы
 	int32_t  steps_up;           // Рассчитанные шаги для подъема иглы
 	uint32_t pump_duration_ms;   // Рассчитанная длительность работы насоса в мс
-
 	} ParsedArgs_DispenserAspirate;
 
 
+ /**
+  * @brief Разобранные параметры для команды DISPENSER_DISPENSE (0x2200). added 13/02/2026
+  */
+typedef struct {
+	uint8_t  dispenser_id;       // ID логического дозатора
+	uint8_t  target_type;        // Тип назначения (кювета, станция промывки и т.д.)
+	int32_t  rotate_steps;       // Рассчитанные шаги для поворота дозатора
+	int32_t  steps_down;         // Рассчитанные шаги для опускания иглы
+	int32_t  steps_up;           // Рассчитанные шаги для подъема иглы
+	uint32_t pump_duration_ms;   // Рассчитанная длительность работы насоса в мс
+	} ParsedArgs_DispenserDispense;
 
 
 // --- КОНЕЦ НОВЫХ СТРУКТУР ---
@@ -77,6 +87,7 @@ typedef enum {
 	RECIPE_WASH_STATION_WASH, // added 05/02/2026
 	RECIPE_SAMPLE_ROTATE, // added 11/02/2026 ID для команды поворота диска образцов
 	RECIPE_DISPENSER_ASPIRATE, // added 11/02/2026 ID для команды забора образца дозатором
+	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
 
 
 	// --- [ADD_NEW_COMMAND] ---
@@ -147,6 +158,8 @@ typedef struct {
 			ParsedArgs_WashStationWash wash_station_wash; // <-- added 05/02/2026
 			ParsedArgs_SampleRotate sample_rotate; // added 11/02/2026 Добавлено поле для поворота диска образцов
 			ParsedArgs_DispenserAspirate dispenser_aspirate; // added 11/02/2026 Добавлено поле для забора образца дозатором
+			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 12/02/2026
+
 
 
 			// Здесь будут добавляться другие команды

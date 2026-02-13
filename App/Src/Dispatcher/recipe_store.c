@@ -328,6 +328,85 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			{ .atomic_actions = NULL, .num_actions = 0 }
 		};
 
+/**
+ * @brief Рецепт: Выдача образца/реагента дозатором.  added 13/02/2026
+ * Выполняется командой DISPENSER_DISPENSE (0x2200).
+ */
+ const ProcessStep_t g_recipe_dispenser_dispense[] = {
+		 // Шаг 1: Поворот дозатора к цели
+		 { .atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 5,
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0,
+					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS,
+					 .speed = 500,
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+		},
+
+		// Шаг 2: Опускание иглы (Z-ось)
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					.motor_id = 3,
+					.motor_id_source = PARAM_SOURCE_STATIC,
+					.steps = 0,
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN,
+					.speed = 200,
+					.speed_source = PARAM_SOURCE_STATIC
+				}}
+			},
+			.num_actions = 1
+		},
+
+		// Шаг 3: Запуск насоса для выдачи жидкости и ожидание
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_START_PUMP, .params.pump = {
+					.pump_id = 0,
+					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID
+				}},
+			{ .action = ACTION_WAIT_MS, .params.wait = {
+					.delay_ms = 0,
+					.delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_PUMP_DURATION_MS
+				}}
+			},
+			.num_actions = 2
+		},
+
+		// Шаг 4: Остановка насоса
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_STOP_PUMP, .params.pump = {
+					.pump_id = 0,
+					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID
+				}}
+			},
+		.num_actions = 1
+		},
+
+		// Шаг 5: Подъем иглы (Z-ось)
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					.motor_id = 3,
+					.motor_id_source = PARAM_SOURCE_STATIC,
+					.steps = 0,
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP,
+					.speed = 200,
+					.speed_source = PARAM_SOURCE_STATIC
+				}}
+			},
+		.num_actions = 1
+		},
+
+		// Маркер конца рецепта
+		{ .atomic_actions = NULL, .num_actions = 0 }
+	};
+
+
+
+
+
 
 
 // --- [ADD_NEW_COMMAND] ---
@@ -367,6 +446,8 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
         case RECIPE_DISPENSER_ASPIRATE: // <-- added 11/02/2026
         	return g_recipe_dispenser_aspirate;
 
+        case RECIPE_DISPENSER_DISPENSE: // <-- added 13/02/2026
+        	return g_recipe_dispenser_dispense;
 
 
         // --- [ADD_NEW_COMMAND] ---
