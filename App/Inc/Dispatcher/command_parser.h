@@ -72,6 +72,15 @@ typedef struct {
 	uint32_t pump_duration_ms;   // Рассчитанная длительность работы насоса в мс
 	} ParsedArgs_DispenserDispense;
 
+ /**
+  * @brief Разобранные параметры для команды REAGENT_ROTATE (0x5000).
+  */
+typedef struct {
+	uint8_t  rotor_id;          // ID ротора
+	int32_t  rotate_steps;      // Рассчитанные шаги для поворота ротора
+	} ParsedArgs_ReagentRotate;
+
+
 
 // --- КОНЕЦ НОВЫХ СТРУКТУР ---
 
@@ -88,6 +97,7 @@ typedef enum {
 	RECIPE_SAMPLE_ROTATE, // added 11/02/2026 ID для команды поворота диска образцов
 	RECIPE_DISPENSER_ASPIRATE, // added 11/02/2026 ID для команды забора образца дозатором
 	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
+	RECIPE_REAGENT_ROTATE, // added 13/02/2026
 
 
 	// --- [ADD_NEW_COMMAND] ---
@@ -158,7 +168,8 @@ typedef struct {
 			ParsedArgs_WashStationWash wash_station_wash; // <-- added 05/02/2026
 			ParsedArgs_SampleRotate sample_rotate; // added 11/02/2026 Добавлено поле для поворота диска образцов
 			ParsedArgs_DispenserAspirate dispenser_aspirate; // added 11/02/2026 Добавлено поле для забора образца дозатором
-			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 12/02/2026
+			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 13/02/2026
+			ParsedArgs_ReagentRotate reagent_rotate; // <-- added 13/02/2026
 
 
 

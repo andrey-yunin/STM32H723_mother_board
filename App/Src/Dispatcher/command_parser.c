@@ -48,12 +48,20 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				.recipe_id = RECIPE_DISPENSER_ASPIRATE
 				},
 
-		// DISPENSER_DISPENSE descriptor: <-- ДОБАВИТЬ ЭТОТ БЛОК
+		// DISPENSER_DISPENSE descriptor: <-- added 13/02/2026
 		{.command_code = 0x2200, // Код команды DISPENSER_DISPENSE
 				.min_params_len = 6,   // dispenser_id (1) + target (1) + slot (2) + volume (2) = 6 байт
 				.max_params_len = 6,
 				.recipe_id = RECIPE_DISPENSER_DISPENSE
+				},
+
+		// REAGENT_ROTATE descriptor: <-- added 13/02/2026
+		{.command_code = 0x5000, // Код команды REAGENT_ROTATE
+				.min_params_len = 3,   // rotor_id (1) + slot (2) = 3 байта
+				.max_params_len = 3,
+				.recipe_id = RECIPE_REAGENT_ROTATE
 				}
+
 		 // Здесь будут добавляться другие команды-рецепты
 
 		 };

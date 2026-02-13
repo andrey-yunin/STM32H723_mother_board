@@ -128,17 +128,29 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		cmd->args.dispenser_dispense.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
 
     		cmd->args_type = ARGS_TYPE_PARSED;
-
     		}
     	else {
     		success = false;
     	}
     	break;
 
+    case 0x5000: // REAGENT_ROTATE command added 12/02/2026
+    	if (params_len == 3) {
+    		uint8_t received_rotor_id = raw_params[0];
+    		uint16_t received_slot_number = read_uint16_from_buffer(&raw_params[1]);
 
+    		cmd->args.reagent_rotate.rotor_id = received_rotor_id;
+    		cmd->args.reagent_rotate.rotate_steps = ParamTranslator_ReagentRotorSlotToSteps(received_rotor_id, received_slot_number);
 
-    	 // --- [ADD_NEW_PARSER] ---
-		 // Здесь будут добавляться case для других команд
+    		cmd->args_type = ARGS_TYPE_PARSED;
+    		}
+    	else {
+    		success = false;
+    	}
+    	break;
+
+    	// --- [ADD_NEW_PARSER] ---
+		// Здесь будут добавляться case для других команд
 
      default:
     	 // Для команд без параметров (например, GET_VERSION) или

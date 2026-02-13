@@ -169,6 +169,21 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	 return DISPENSER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
 	 }
 
+ /**
+  * @brief Преобразует ID ротора реагентов и номер слота в шаги мотора для поворота. added 13/02/2026
+  */
+ int32_t ParamTranslator_ReagentRotorSlotToSteps(uint8_t rotor_id, uint16_t slot_number)
+ {
+	 // TODO: Реализовать логику трансляции в зависимости от rotor_id и slot_number.
+	 // Учитывать, что роторов может быть несколько, и у каждого своя механика/калибровка.
+	 // Пока - простая заглушка.
+	 if (slot_number == 0) return 0;
+	 // Предполагаем, что для ротора реагентов есть константа STEPS_PER_SLOT
+	 // Для примера используем 100 шагов на слот, но это нужно будет откалибровать.
+	 return (int32_t)slot_number * ROTOR_REAGENT_STEPS_PER_SLOT; // ROTOR_REAGENT_STEPS_PER_SLOT (нужно будет определить)
+	 }
+
+
  // Добавить реализации других функций преобразования здесь
 
 

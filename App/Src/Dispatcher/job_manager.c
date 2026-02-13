@@ -127,19 +127,24 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 				return job->initial_cmd.args.dispenser_wash.dispenser_id;
 
 			case PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES: // <-- added 05/02/2026
-				 return job->initial_cmd.args.wash_station_wash.cycles;
+				return job->initial_cmd.args.wash_station_wash.cycles;
 
 			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID: // <-- added 12/02/2026
-				 return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
+				return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
 
 			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE: // <-- added 12/02/2026
-				 return job->initial_cmd.args.dispenser_aspirate.source_type;
+				return job->initial_cmd.args.dispenser_aspirate.source_type;
 
 			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID: // <-- added 13/02/2026
-				 return job->initial_cmd.args.dispenser_dispense.dispenser_id;
+				return job->initial_cmd.args.dispenser_dispense.dispenser_id;
 
 			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_TARGET_TYPE: // <-- added 13/02/2026
-				 return job->initial_cmd.args.dispenser_dispense.target_type;
+				return job->initial_cmd.args.dispenser_dispense.target_type;
+
+			case PARAM_SOURCE_CMD_REAGENT_ROTATE_ROTOR_ID: // <-- <-- added 13/02/2026
+				return job->initial_cmd.args.reagent_rotate.rotor_id;
+
+
 
 
 
@@ -199,6 +204,10 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 
 		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP: // <-- added 13/02/2026
 			return job->initial_cmd.args.dispenser_dispense.steps_up;
+
+		 case PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS: // <-- added 13/02/2026
+			 return job->initial_cmd.args.reagent_rotate.rotate_steps;
+
 
 
 		default:

@@ -35,6 +35,10 @@
 #define DISPENSER_Z_STEPS_UP         -300    // Шагов для подъема иглы дозатора (величина)
 #define PUMP_MS_PER_UL               10     // мс работы насоса на 1 микролитр
 
+// Константы для трансляции параметров ротора реагентов (заглушки)
+#define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентов
+
+
 
 // --- Translation Function Declarations ---
 
@@ -119,7 +123,8 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
 
 
  /**
-  * @brief Преобразует тип назначения и позицию в шаги опускания иглы дозатора.
+  * @brief Преобразует тип назначен// Константы для трансляции параметров ротора реагентов (заглушки)
+   8 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентовия и позицию в шаги опускания иглы дозатора.
   *
   * @param target_type Тип назначения.
   * @param position Номер позиции/слота.
@@ -138,6 +143,15 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   int32_t ParamTranslator_DispenserTargetZToStepsUp(uint8_t target_type, uint16_t position);
 
 
+
+  /**
+   * @brief Преобразует ID ротора реагентов и номер слота в шаги мотора для поворота.
+   *
+   * @param rotor_id ID ротора реагентов.
+   * @param slot_number Номер слота (позиции).
+   * @return int32_t Количество шагов для поворота ротора.
+   */
+  int32_t ParamTranslator_ReagentRotorSlotToSteps(uint8_t rotor_id, uint16_t slot_number);
 
 
 // --- Add more translation functions as identified by the command analysis ---

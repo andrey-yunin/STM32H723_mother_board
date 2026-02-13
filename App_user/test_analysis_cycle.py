@@ -310,6 +310,26 @@ def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, v
     print(f"=== Тест DISPENSER_DISPENSE для дозатора {disp_id} пройден успешно ===")
     return True
 
+# --- ТЕСТ команды REAGENT_ROTATE ---
+def test_reagent_rotate_command(rotor_id: int, slot_number: int):
+    print(f"\n=== Тест команды REAGENT_ROTATE (0x5000) для ротора {rotor_id}, слота {slot_number} ===")
+    command_code = 0x5000
+    params = struct.pack('>BH', rotor_id, slot_number)
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:{6}, Steps:"
+    if not wait_for_log_message(expected_log_part, timeout=10):
+        print(f"ERROR: Log message part '{expected_log_part}' not found for REAGENT_ROTATE.")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест REAGENT_ROTATE для ротора {rotor_id}, слота {slot_number} пройден успешно ===")
+    return True
+
 # --- ГЛАВНАЯ ФУНКЦИЯ ---
 def main():
     global ser
@@ -355,6 +375,11 @@ def main():
         # 5. Выдача образца в кювету
         # (дозатор 1, назначение - реакционный диск (0x01), кювета 10, объем 10 мкл)
         if all_tests_passed and not test_dispenser_dispense_command(1, 0x01, 10, 10):
+            all_tests_passed = False
+
+        # 6. Поворот ротора реагентов
+        # (ротор 1, слот 3)
+        if all_tests_passed and not test_reagent_rotate_command(1, 3):
             all_tests_passed = False
 
         # --- Сюда будут добавляться следующие шаги цикла ---

@@ -404,6 +404,30 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 	};
 
 
+ /**
+  * @brief Рецепт: Поворот ротора реагентов.
+  * Выполняется командой REAGENT_ROTATE (0x5000). added 13/02/2026
+  */
+ const ProcessStep_t g_recipe_reagent_rotate[] = {
+		 // Шаг 1: Поворот мотора ротора реагентов
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 6, // Предполагаемый ID мотора для ротора реагентов (проверить в app_config.h)
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0,
+					 .steps_source = PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS,
+					 .speed = 800, // Предполагаемая скорость (проверить или сделать параметром)
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+			},
+		// Маркер конца рецепта
+			{ .atomic_actions = NULL, .num_actions = 0 }
+	};
+
+
+
 
 
 
@@ -448,6 +472,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
         case RECIPE_DISPENSER_DISPENSE: // <-- added 13/02/2026
         	return g_recipe_dispenser_dispense;
+
+        case RECIPE_REAGENT_ROTATE: // <-- added 13/02/2026
+        	return g_recipe_reagent_rotate;
+
 
 
         // --- [ADD_NEW_COMMAND] ---
