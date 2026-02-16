@@ -13,6 +13,7 @@
 
 // --- НОВЫЕ СТРУКТУРЫ ДЛЯ РАЗОБРАННЫХ ПАРАМЕТРОВ ---
 
+
 /**
  * @brief Разобранные параметры для команды INIT (0x1002)
  */
@@ -73,12 +74,27 @@ typedef struct {
 	} ParsedArgs_DispenserDispense;
 
  /**
-  * @brief Разобранные параметры для команды REAGENT_ROTATE (0x5000).
+  * @brief Разобранные параметры для команды REAGENT_ROTATE (0x5000). added 13/02/2026
   */
 typedef struct {
 	uint8_t  rotor_id;          // ID ротора
 	int32_t  rotate_steps;      // Рассчитанные шаги для поворота ротора
 	} ParsedArgs_ReagentRotate;
+
+ /**
+  * @brief Разобранные параметры для команды MIXER_MIX (0x3100). added 13/02/2026
+  */
+typedef struct {
+	uint8_t   mixer_id;          // ID миксера
+	int32_t   rotate_steps;      // Рассчитанные шаги для поворота миксера к кювете
+	int32_t   z_steps_down;      //Рассчитанные шаги для опускания лопатки
+	int32_t   z_steps_up;        //Рассчитанные шаги для подъема лопатки
+	uint16_t  duration_ms;       // Длительность перемешивания
+	uint8_t   wash_cycles;       // Количество циклов промывки после
+	} ParsedArgs_MixerMix;
+
+
+
 
 
 
@@ -98,6 +114,7 @@ typedef enum {
 	RECIPE_DISPENSER_ASPIRATE, // added 11/02/2026 ID для команды забора образца дозатором
 	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
 	RECIPE_REAGENT_ROTATE, // added 13/02/2026
+	RECIPE_MIXER_MIX, // added 13/02/2026
 
 
 	// --- [ADD_NEW_COMMAND] ---
@@ -162,6 +179,7 @@ typedef struct {
 	union {
 			char string[APP_USB_CMD_MAX_LEN];
 			BinaryArgs_t binary;
+
 			// --- НОВЫЕ ПОЛЯ --- 29.01.2026
 			ParsedArgs_Init init;
 			ParsedArgs_DispenserWash dispenser_wash;
@@ -170,6 +188,7 @@ typedef struct {
 			ParsedArgs_DispenserAspirate dispenser_aspirate; // added 11/02/2026 Добавлено поле для забора образца дозатором
 			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 13/02/2026
 			ParsedArgs_ReagentRotate reagent_rotate; // <-- added 13/02/2026
+			ParsedArgs_MixerMix mixer_mix; // <-- added 13/02/2026
 
 
 

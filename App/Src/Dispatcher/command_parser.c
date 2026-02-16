@@ -60,7 +60,15 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				.min_params_len = 3,   // rotor_id (1) + slot (2) = 3 байта
 				.max_params_len = 3,
 				.recipe_id = RECIPE_REAGENT_ROTATE
+				},
+
+		 // MIXER_MIX descriptor: <-- added 13/02/2026
+		{.command_code = 0x3100, // Код команды MIXER_MIX
+				.min_params_len = 6,   // mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 байт
+				.max_params_len = 6,
+				.recipe_id = RECIPE_MIXER_MIX
 				}
+
 
 		 // Здесь будут добавляться другие команды-рецепты
 

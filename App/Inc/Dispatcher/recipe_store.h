@@ -52,6 +52,15 @@
 	 PARAM_SOURCE_CMD_REAGENT_ROTATE_ROTOR_ID,
 	 PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS,
 
+	 // --- Параметры для MIXER_MIX --- --- added 13/02/2026
+	 PARAM_SOURCE_CMD_MIXER_MIX_MIXER_ID,
+	 PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS,
+	 PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS,
+	 PARAM_SOURCE_CMD_MIXER_MIX_WASH_CYCLES,
+	 PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN,
+	 PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP,
+
+
 
 	 // Добавьте другие источники по мере необходимости
 
@@ -69,6 +78,8 @@
      ACTION_STOP_PUMP,       // Выключить насос
      ACTION_WAIT_MS,         // Подождать N миллисекунд
      ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
+	 ACTION_START_MIXING_MOTOR, // <-- НОВОЕ ДЕЙСТВИЕ: Включить мотор перемешивания added 13/02/2026
+	 ACTION_STOP_MIXING_MOTOR,  // <-- НОВОЕ ДЕЙСТВИЕ: Выключить мотор перемешивани added 13/02/2026
      // ... Другие будущие действия ...
  } ActionType_t;
 
@@ -111,6 +122,16 @@
              uint16_t speed; // Скорость поиска
              ParamSource_t speed_source;    // NEW!
          } home_motor;
+
+
+         // <-- НОВАЯ СТРУКТУРА ДЛЯ МОТОРА ПЕРЕМЕШИВАНИЯ --> added 13/02/2026
+         // Параметры для ACTION_START_MIXING_MOTOR / ACTION_STOP_MIXING_MOTOR
+         struct {
+        	 uint8_t mixer_id; // ID миксера (или мотора перемешивания)
+        	 ParamSource_t mixer_id_source;
+
+        	 // Возможно, тут нужны параметры для скорости/мощности, но для простоты пока только ID
+          } mixing_motor;
 
      } params;
  } AtomicAction_t; //

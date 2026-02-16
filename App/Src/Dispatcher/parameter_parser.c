@@ -149,6 +149,30 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     	}
     	break;
 
+    case 0x3100: // MIXER_MIX command added 13/02/2026
+    	if (params_len == 6) { // Общая длина параметров: mixer_id (1 байт) + cuvette (2 байта) + duration (2 байта) + wash_cycles (1 байт) = 6 байт
+    		// Чтение необработанных параметров из буфера:
+    		uint8_t received_mixer_id = raw_params[0];                              // mixer_id: первый байт
+    		uint16_t received_cuvette = read_uint16_from_buffer(&raw_params[1]);    // cuvette: 2 байта, начиная со смещения 1
+    		uint16_t received_duration = read_uint16_from_buffer(&raw_params[3]);   // duration: 2 байта, начиная со смещения 3
+    		uint8_t received_wash_cycles = raw_params[5];                           // wash_cycles: 1 байт, по смещению 5
+
+    		// Заполнение структуры ParsedArgs_MixerMix:
+    		cmd->args.mixer_mix.mixer_id = received_mixer_id;                       // Сохраняем ID миксера напрямую
+    		cmd->args.mixer_mix.rotate_steps = ParamTranslator_MixerCuvetteToRotationSteps(received_cuvette); // Трансляция cuvette в шаги вращения (низкоуровневый параметр)
+    		cmd->args.mixer_mix.z_steps_down = ParamTranslator_MixerZToStepsDown(received_mixer_id, received_cuvette); // Расчет шагов для опускания лопатки
+    		cmd->args.mixer_mix.z_steps_up = ParamTranslator_MixerZToStepsUp(received_mixer_id, received_cuvette);   // Расчет шагов для подъема лопатки
+    		cmd->args.mixer_mix.duration_ms = received_duration;                    // Сохраняем длительность перемешивания (уже в мс, низкоуровневый параметр)
+    		cmd->args.mixer_mix.wash_cycles = received_wash_cycles;                 // Сохраняем количество промывок (высокоуровневый параметр для JobManager)
+
+    		cmd->args_type = ARGS_TYPE_PARSED; // Отмечаем, что параметры успешно разобраны
+    		}
+    	else {
+    		success = false; // Неправильная длина параметров
+    		}
+    	break;
+
+
     	// --- [ADD_NEW_PARSER] ---
 		// Здесь будут добавляться case для других команд
 

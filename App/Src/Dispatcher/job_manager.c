@@ -144,6 +144,10 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 			case PARAM_SOURCE_CMD_REAGENT_ROTATE_ROTOR_ID: // <-- <-- added 13/02/2026
 				return job->initial_cmd.args.reagent_rotate.rotor_id;
 
+			 case PARAM_SOURCE_CMD_MIXER_MIX_MIXER_ID: // <--added 16/02/2026
+				 return job->initial_cmd.args.mixer_mix.mixer_id;
+
+
 
 
 
@@ -165,6 +169,7 @@ static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t
 
 			case PARAM_SOURCE_CMD_DISPENSER_CYCLES:
 				return job->initial_cmd.args.dispenser_wash.cycles;
+
 
 	//		case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // <-- added 05/02/2026
 		//		return job->initial_cmd.args.wash_station_wash.cuvette;
@@ -205,9 +210,17 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP: // <-- added 13/02/2026
 			return job->initial_cmd.args.dispenser_dispense.steps_up;
 
-		 case PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS: // <-- added 13/02/2026
+		case PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS: // <-- added 13/02/2026
 			 return job->initial_cmd.args.reagent_rotate.rotate_steps;
 
+		case PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS: // <-- added 16/02/2026
+			return job->initial_cmd.args.mixer_mix.rotate_steps;
+
+		case PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN: // <-- added 16/02/2026
+			return job->initial_cmd.args.mixer_mix.z_steps_down;
+
+		case PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP: // <-- added 16/02/2026
+			return job->initial_cmd.args.mixer_mix.z_steps_up;
 
 
 		default:
@@ -230,6 +243,9 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 
 			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_PUMP_DURATION_MS: // added 13/02/2026
 				return job->initial_cmd.args.dispenser_dispense.pump_duration_ms;
+
+			case PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS: // <-- added 16/02/2026
+				return job->initial_cmd.args.mixer_mix.duration_ms;
 
 
 
@@ -416,6 +432,27 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	// For now, we update the log message to reflect the dynamic parameter.
             	job->pending_actions_count--;
             	break;
+
+            case ACTION_START_MIXING_MOTOR: // <-- added 13/02/2026
+            	uint8_t effective_start_mixing_motor_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_MIXING_MOTOR (ID:%u) to Exec.", (unsigned long)job->job_id,
+            			effective_start_mixing_motor_id);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	// TODO: Packer_CreateStartMixingMotorMsg(effective_start_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
+            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Имитация ответа
+            	break;
+
+            case ACTION_STOP_MIXING_MOTOR: // <-- added 13/02/2026
+            	uint8_t effective_stop_mixing_motor_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_MIXING_MOTOR (ID:%u) to Exec.", (unsigned long)job->job_id,
+            			effective_stop_mixing_motor_id);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	// TODO: Packer_CreateStopMixingMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
+            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Имитация ответа
+            	break;
+
 
             default:
                 snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Unknown action %d in step %u.", (unsigned long)job->job_id, action->action, job->current_step_index);

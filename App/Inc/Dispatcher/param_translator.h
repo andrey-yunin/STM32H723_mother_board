@@ -38,6 +38,16 @@
 // Константы для трансляции параметров ротора реагентов (заглушки)
 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентов
 
+// Константы для трансляции параметров миксера (заглушки)
+//#define MIXER_ROT_MOTOR_ID           8     // ID мотора для поворота миксера по X-Y
+//#define MIXER_Z_MOTOR_ID             9     // ID мотора для подъема/опускания лопатки миксера по Z
+//#define MIXER_MIXING_MOTOR_ID        10    // ID мотора для перемешивания (вкл/выкл)
+
+#define MIXER_Z_STEPS_UP             -200   // Шагов для опускания лопатки миксера
+#define MIXER_Z_STEPS_DOWN           200  // Шагов для подъема лопатки миксера
+#define MIXER_ROT_STEPS_PER_CUVETTE  100   // Шагов на кювету для поворота миксера
+
+
 
 
 // --- Translation Function Declarations ---
@@ -67,8 +77,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
  * @brief Преобразует номер слота на диске образцов в шаги мотора.
  *
  * @param slot_number Номер слота (позиции) на диске образцов.
- * @return int32_t Количество шагов для поворота мотора.
- */
+ * @return int32_t Количество шагов для поворота мотора. */
  int32_t ParamTranslator_SampleDiskSlotToSteps(uint16_t slot_number);
 
 
@@ -77,8 +86,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   *
   * @param source_type Тип источника (например, диск образцов, реагентов).
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.
-  */
+  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.  */
   int32_t ParamTranslator_DispenserSlotToRotateSteps(uint8_t source_type, uint16_t position);
 
 
@@ -87,8 +95,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   *
   * @param source_type Тип источника.
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для опускания иглы (положительное значение).
-  */
+  * @return int32_t Количество шагов для опускания иглы (положительное значение).  */
   int32_t ParamTranslator_DispenserZToStepsDown(uint8_t source_type, uint16_t position);
 
 
@@ -97,8 +104,7 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   *
   * @param source_type Тип источника.
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для подъема иглы (положительное значение).
-  */
+  * @return int32_t Количество шагов для подъема иглы (положительное значение).  */
   int32_t ParamTranslator_DispenserZToStepsUp(uint8_t source_type, uint16_t position);
 
 
@@ -107,51 +113,68 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
    *
    * @param dispenser_id ID дозатора (может влиять на калибровку насоса).
    * @param volume Объем в микролитрах.
-   * @return uint32_t Длительность работы насоса в мс.
-   */
+   * @return uint32_t Длительность работы насоса в мс.   */
   uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume);
 
 
  /**
-  * @brief Преобразует тип назначения и позицию в шаги вращения дозатора.
-  *
+  * @brief Преобразует тип назначения и позицию в шаги вращения дозатора.  *
   * @param target_type Тип назначения (например, реакционный диск, станция промывки).
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.
-  */
+  * @return int32_t Количество шагов для поворота дозатора вокруг своей оси.  */
   int32_t ParamTranslator_DispenserTargetToRotateSteps(uint8_t target_type, uint16_t position);
 
 
  /**
   * @brief Преобразует тип назначен// Константы для трансляции параметров ротора реагентов (заглушки)
-   8 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентовия и позицию в шаги опускания иглы дозатора.
-  *
+   8 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентовия и позицию в шаги опускания иглы дозатора.  *
   * @param target_type Тип назначения.
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для опускания иглы (положительное значение).
-  */
+  * @return int32_t Количество шагов для опускания иглы (положительное значение).  */
   int32_t ParamTranslator_DispenserTargetZToStepsDown(uint8_t target_type, uint16_t position);
 
 
  /**
-  * @brief Преобразует тип назначения и позицию в шаги подъема иглы дозатора.
-  *
+  * @brief Преобразует тип назначения и позицию в шаги подъема иглы дозатора.  *
   * @param target_type Тип назначения.
   * @param position Номер позиции/слота.
-  * @return int32_t Количество шагов для подъема иглы (отрицательное значение).
-  */
+  * @return int32_t Количество шагов для подъема иглы (отрицательное значение).  */
   int32_t ParamTranslator_DispenserTargetZToStepsUp(uint8_t target_type, uint16_t position);
 
 
 
   /**
-   * @brief Преобразует ID ротора реагентов и номер слота в шаги мотора для поворота.
-   *
+   * @brief Преобразует ID ротора реагентов и номер слота в шаги мотора для поворота.   *
    * @param rotor_id ID ротора реагентов.
    * @param slot_number Номер слота (позиции).
-   * @return int32_t Количество шагов для поворота ротора.
-   */
+   * @return int32_t Количество шагов для поворота ротора.   */
   int32_t ParamTranslator_ReagentRotorSlotToSteps(uint8_t rotor_id, uint16_t slot_number);
+
+
+  /**
+   * @brief Преобразует номер кюветы в шаги мотора для поворота миксера.   *
+   * @param cuvette_number Номер целевой кюветы.
+   * @return int32_t Количество шагов для поворота миксера к кювете.   */
+  int32_t ParamTranslator_MixerCuvetteToRotationSteps(uint16_t cuvette_number);
+
+   /**
+    * @brief Преобразует параметры миксера в шаги для опускания лопатки.    *
+    * @param mixer_id ID миксера.
+    * @param cuvette_number Номер целевой кюветы (для контекста, если нужен).
+    * @return int32_t Количество шагов для опускания лопатки.
+    */
+  int32_t ParamTranslator_MixerZToStepsDown(uint8_t mixer_id, uint16_t cuvette_number);
+
+   /**
+    * @brief Преобразует параметры миксера в шаги для подъема лопатки.
+    *
+    * @param mixer_id ID миксера.
+    * @param cuvette_number Номер целевой кюветы (для контекста, если нужен).
+    * @return int32_t Количество шагов для подъема лопатки.
+    */
+   int32_t ParamTranslator_MixerZToStepsUp(uint8_t mixer_id, uint16_t cuvette_number);
+
+
 
 
 // --- Add more translation functions as identified by the command analysis ---

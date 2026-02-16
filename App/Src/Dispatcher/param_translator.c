@@ -184,6 +184,38 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	 }
 
 
+ /**
+  * @brief Преобразует номер кюветы в шаги мотора для поворота миксера.
+  */
+ int32_t ParamTranslator_MixerCuvetteToRotationSteps(uint16_t cuvette_number)
+ {
+	 // TODO: Реализовать логику трансляции в зависимости от cuvette_number.
+     // Пока - простая заглушка.
+     if (cuvette_number == 0) return 0;
+     return (int32_t)cuvette_number * MIXER_ROT_STEPS_PER_CUVETTE;
+     }
+
+  /**
+   * @brief Преобразует параметры миксера в шаги для опускания лопатки.
+   */
+ int32_t ParamTranslator_MixerZToStepsDown(uint8_t mixer_id, uint16_t cuvette_number)
+ {
+	 // TODO: Реализовать логику трансляции в зависимости от mixer_id и cuvette_number.
+	 // Пока - простая заглушка.
+	 return MIXER_Z_STEPS_DOWN; // Возвращаем положительное значение
+	 }
+
+  /**
+   * @brief Преобразует параметры миксера в шаги для подъема лопатки.
+   */
+  int32_t ParamTranslator_MixerZToStepsUp(uint8_t mixer_id, uint16_t cuvette_number)
+  {
+	  // TODO: Реализовать логику трансляции в зависимости от mixer_id и cuvette_number.
+	  // Пока - простая заглушка.
+	  return MIXER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
+	  }
+
+
  // Добавить реализации других функций преобразования здесь
 
 

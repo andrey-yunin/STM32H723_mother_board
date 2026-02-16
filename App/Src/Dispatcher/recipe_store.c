@@ -230,7 +230,7 @@ const ProcessStep_t g_recipe_sample_rotate[] = {
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
 					.motor_id = 4,       // Идентификатор мотора диска образцов (статический)
 					.motor_id_source = PARAM_SOURCE_STATIC, // Источник ID мотора - статический
-					.steps = 0,                             // Статическое значение будет перезаписано динамическим
+					.steps = 0,                             // Статическое значение будет перезаписано динамически
 					.steps_source = PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // Шаги из команды SAMPLE_ROTATE
 					.speed = 1000,                          // Скорость вращения (статическая)
 					.speed_source = PARAM_SOURCE_STATIC     // Источник скорости - статическая
@@ -426,10 +426,93 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			{ .atomic_actions = NULL, .num_actions = 0 }
 	};
 
+ /**
+  * @brief Рецепт: Перемешивание содержимого кюветы.
+  * Выполняется командой MIXER_MIX (0x3100).
+  */
+ const ProcessStep_t g_recipe_mixer_mix[] = {
+		 // Шаг 1: Поворот миксера к кювете
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 8, // Предполагаемый ID мотора для миксера (проверить в app_config.h)
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0,
+					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS,
+					 .speed = 1000, // Предполагаемая скорость
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+		  },
+
+		 // Шаг 2: Опускание лопатки миксера
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 9, // ID мотора для подъема/опускания лопатки миксера
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0,
+					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN, // Будет возвращено MIXER_Z_STEPS_DOWN
+					 .speed = 200, // Предполагаемая скорость
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+		    },
+
+			  // Шаг 3: Включение мотора перемешивания и ожидание длительности
+			  {.atomic_actions = (const AtomicAction_t[]){
+				  { .action = ACTION_START_MIXING_MOTOR, .params.mixing_motor = {
+						  .mixer_id = 10, // ID мотора перемешивания (физический)
+						  .mixer_id_source = PARAM_SOURCE_STATIC // Logical mixer_id from command will map to this physical ID
+				  }},
+				  { .action = ACTION_WAIT_MS, .params.wait = {
+						  .delay_ms = 0,
+						  .delay_ms_source = PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS
+				   }}
+			  },
+			  .num_actions = 2
+			},
+
+			// Шаг 4: Выключение мотора перемешивания
+			{.atomic_actions = (const AtomicAction_t[]){
+				{ .action = ACTION_STOP_MIXING_MOTOR, .params.mixing_motor = {
+						.mixer_id = 10, // ID мотора перемешивания (физический)
+						.mixer_id_source = PARAM_SOURCE_STATIC
+				}}
+			},
+			.num_actions = 1
+			},
+
+			// Шаг 5: Подъем лопатки миксера
+			{.atomic_actions = (const AtomicAction_t[]){
+				{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+						.motor_id = 9, // ID мотора для подъема/опускания лопатки миксера
+						.motor_id_source = PARAM_SOURCE_STATIC,
+						.steps = 0,
+						.steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP, // Будет возвращено MIXER_Z_STEPS_UP
+						.speed = 200, // Предполагаемая скорость
+						.speed_source = PARAM_SOURCE_STATIC
+				}}
+			},
+			.num_actions = 1
+			},
+
+			// Шаг 6: Возврат миксера в исходное положение (X-Y)
+			{.atomic_actions = (const AtomicAction_t[]){
+				{ .action = ACTION_HOME_MOTOR, .params.home_motor = {
+						.motor_id = 8, // ID мотора для поворота миксера по X-Y
+						.motor_id_source = PARAM_SOURCE_STATIC,
+						.speed = 400, // Скорость хоминга
+						.speed_source = PARAM_SOURCE_STATIC
+				}}
+			},
+			.num_actions = 1
+			},
 
 
-
-
+		// Маркер конца рецепта
+			{ .atomic_actions = NULL, .num_actions = 0 }
+		 };
 
 
 
@@ -475,6 +558,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
         case RECIPE_REAGENT_ROTATE: // <-- added 13/02/2026
         	return g_recipe_reagent_rotate;
+
+        case RECIPE_MIXER_MIX: // <-- added 13/02/2026
+        	return g_recipe_mixer_mix;
+
 
 
 

@@ -330,6 +330,29 @@ def test_reagent_rotate_command(rotor_id: int, slot_number: int):
     print(f"=== Тест REAGENT_ROTATE для ротора {rotor_id}, слота {slot_number} пройден успешно ===")
     return True
 
+# --- ТЕСТ команды MIXER_MIX ---
+def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycles: int):
+    print(f"\n=== Тест команды MIXER_MIX (0x3100) для миксера {mixer_id}, кюветы {cuvette} ===")
+    command_code = 0x3100
+    # mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 bytes
+    params = struct.pack('>BHHB', mixer_id, cuvette, duration, wash_cycles)
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    # Проверяем ключевой шаг рецепта по логу для верификации запуска
+    expected_log_part = "Sent ROTATE_MOTOR (ID:8, Steps:"
+    if not wait_for_log_message(expected_log_part, timeout=10):
+        print(f"ERROR: Log message part '{expected_log_part}' not found for MIXER_MIX.")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
+    return True
+
+
 # --- ГЛАВНАЯ ФУНКЦИЯ ---
 def main():
     global ser
@@ -380,6 +403,21 @@ def main():
         # 6. Поворот ротора реагентов
         # (ротор 1, слот 3)
         if all_tests_passed and not test_reagent_rotate_command(1, 3):
+            all_tests_passed = False
+
+        # 7. Забор реагента дозатором (после поворота ротора)
+        # (дозатор 1, источник - ротор реагентов (0x02), позиция 3, объем 200 мкл)
+        if all_tests_passed and not test_dispenser_aspirate_command(1, 0x02, 3, 200):
+            all_tests_passed = False
+
+        # 8. Выдача реагента в кювету
+        # (дозатор 1, назначение - реакционный диск (0x01), кювета 10, объем 200 мкл)
+        if all_tests_passed and not test_dispenser_dispense_command(1, 0x01, 10, 200):
+            all_tests_passed = False
+            
+        # 9. Перемешивание содержимого кюветы
+        # (миксер 1, кювета 10, время 3000 мс, 2 цикла промывки)
+        if all_tests_passed and not test_mixer_mix_command(1, 10, 3000, 2):
             all_tests_passed = False
 
         # --- Сюда будут добавляться следующие шаги цикла ---
