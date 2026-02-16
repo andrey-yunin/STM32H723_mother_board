@@ -67,7 +67,14 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				.min_params_len = 6,   // mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 байт
 				.max_params_len = 6,
 				.recipe_id = RECIPE_MIXER_MIX
-				}
+				},
+
+		// PHOTOMETER_SCAN_SINGLE descriptor: <-- added 13/02/2026
+		{.command_code = 0x6100, // Код команды PHOTOMETER_SCAN_SINGLE
+			.min_params_len = 3,   // cuvette (2) + wavelength_mask (1) = 3 байта
+			.max_params_len = 3,
+			.recipe_id = RECIPE_PHOTOMETER_SCAN_SINGLE
+			}
 
 
 		 // Здесь будут добавляться другие команды-рецепты

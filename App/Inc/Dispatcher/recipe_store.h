@@ -61,6 +61,10 @@
 	 PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP,
 
 
+	 // --- Параметры для PHOTOMETER_SCAN_SINGLE ---
+	 PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS,
+	 PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK,
+
 
 	 // Добавьте другие источники по мере необходимости
 
@@ -80,6 +84,7 @@
      ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
 	 ACTION_START_MIXING_MOTOR, // <-- НОВОЕ ДЕЙСТВИЕ: Включить мотор перемешивания added 13/02/2026
 	 ACTION_STOP_MIXING_MOTOR,  // <-- НОВОЕ ДЕЙСТВИЕ: Выключить мотор перемешивани added 13/02/2026
+	 ACTION_PERFORM_SCAN, // <-- НОВОЕ ДЕЙСТВИЕ: Выполнить сканирование фотометром added 16/02/2026
      // ... Другие будущие действия ...
  } ActionType_t;
 
@@ -133,6 +138,14 @@
         	 // Возможно, тут нужны параметры для скорости/мощности, но для простоты пока только ID
           } mixing_motor;
 
+          // <-- НОВАЯ СТРУКТУРА ДЛЯ ФОТОМЕТРА --> added 16/02/2026
+          // Параметры для ACTION_PERFORM_SCAN
+          struct {
+        	  uint8_t photometer_id;         // ID фотометра (статический, для явности)
+        	  ParamSource_t photometer_id_source;
+        	  uint8_t wavelength_mask;       // Маска длин волн
+        	  ParamSource_t wavelength_mask_source;
+        	  } perform_scan;
      } params;
  } AtomicAction_t; //
 

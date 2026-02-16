@@ -427,7 +427,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 	};
 
  /**
-  * @brief Рецепт: Перемешивание содержимого кюветы.
+  * @brief Рецепт: Перемешивание содержимого кюветы.  added 13/02/2026
   * Выполняется командой MIXER_MIX (0x3100).
   */
  const ProcessStep_t g_recipe_mixer_mix[] = {
@@ -514,6 +514,42 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			{ .atomic_actions = NULL, .num_actions = 0 }
 		 };
 
+ /**
+  * @brief Рецепт: Сканирование одной кюветы фотометром. added 16/02/2026
+  * Выполняется командой PHOTOMETER_SCAN_SINGLE (0x6100).
+  */
+ const ProcessStep_t g_recipe_photometer_scan_single[] = {
+		 // Шаг 1: Поворот реакционного диска для позиционирования кюветы
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 3, // ID мотора реакционного диска (предположение)
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0,
+					 .steps_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS,
+					 .speed = 1000,
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+			 },
+
+		// Шаг 2: Выполнение сканирования
+		{.atomic_actions = (const AtomicAction_t[]){
+			{ .action = ACTION_PERFORM_SCAN, .params.perform_scan = {
+					.photometer_id = 1, // ID фотометра (статический)
+					.photometer_id_source = PARAM_SOURCE_STATIC,
+					.wavelength_mask = 0, // Будет заменено динамическим параметром
+					.wavelength_mask_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK
+				}}
+			},
+			.num_actions = 1
+			},
+
+		// Маркер конца рецепта
+		{ .atomic_actions = NULL, .num_actions = 0 }
+		 };
+
+
 
 
 // --- [ADD_NEW_COMMAND] ---
@@ -561,6 +597,9 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
         case RECIPE_MIXER_MIX: // <-- added 13/02/2026
         	return g_recipe_mixer_mix;
+
+        case RECIPE_PHOTOMETER_SCAN_SINGLE: // <-- added 16/02/2026
+        	return g_recipe_photometer_scan_single;
 
 
 

@@ -147,8 +147,8 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 			 case PARAM_SOURCE_CMD_MIXER_MIX_MIXER_ID: // <--added 16/02/2026
 				 return job->initial_cmd.args.mixer_mix.mixer_id;
 
-
-
+			 case PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK: // <-- НОВЫЙ CASE ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
+				 return job->initial_cmd.args.photometer_scan_single.wavelength_mask;
 
 
 
@@ -221,6 +221,10 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 
 		case PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP: // <-- added 16/02/2026
 			return job->initial_cmd.args.mixer_mix.z_steps_up;
+
+		case PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS: // <-- added for PHOTOMETER_SCAN_SINGLE 16/02/2026
+			return job->initial_cmd.args.photometer_scan_single.rotate_steps;
+
 
 
 		default:
@@ -453,6 +457,16 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	job->pending_actions_count--; // Имитация ответа
             	break;
 
+            case ACTION_PERFORM_SCAN: // <-- added for PHOTOMETER_SCAN_SINGLE
+            	uint8_t effective_photometer_id = JobManager_GetUint8Param(job, action->params.perform_scan.photometer_id_source, action->params.perform_scan.photometer_id);
+            	uint8_t effective_wavelength_mask = JobManager_GetUint8Param(job, action->params.perform_scan.wavelength_mask_source, action->params.perform_scan.wavelength_mask);
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent PERFORM_SCAN (ID:%u, Mask:0x%02X) to Exec.", (unsigned long)job->job_id,
+            			effective_photometer_id, effective_wavelength_mask);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	// TODO: Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
+            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	job->pending_actions_count--; // Simulate response
+            	break;
 
             default:
                 snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Unknown action %d in step %u.", (unsigned long)job->job_id, action->action, job->current_step_index);

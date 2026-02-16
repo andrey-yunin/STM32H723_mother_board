@@ -215,6 +215,19 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  return MIXER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
 	  }
 
+  /**
+   * @brief Преобразует номер кюветы в шаги мотора для позиционирования фотометра.
+   */
+  int32_t ParamTranslator_PhotometerCuvetteToSteps(uint16_t cuvette_number)
+  {
+	  // TODO: Реализовать более сложную логику, учитывающую калибровку,
+	  // начальное положение и т.д. Пока - простая заглушка.
+	  if (cuvette_number == 0) return 0; // Или вернуть ошибку
+	  return (int32_t)cuvette_number * PHOTOMETER_STEPS_PER_CUVETTE;
+	  }
+
+
+
 
  // Добавить реализации других функций преобразования здесь
 

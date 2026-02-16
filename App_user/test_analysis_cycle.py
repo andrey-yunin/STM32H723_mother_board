@@ -352,6 +352,28 @@ def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycl
     print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
     return True
 
+# --- ТЕСТ команды PHOTOMETER_SCAN_SINGLE ---
+def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int):
+    print(f"\n=== Тест команды PHOTOMETER_SCAN_SINGLE (0x6100) для кюветы {cuvette}, маска 0x{wavelength_mask:02X} ===")
+    command_code = 0x6100
+    # cuvette (2 bytes) + wavelength_mask (1 byte) = 3 bytes
+    params = struct.pack('>HB', cuvette, wavelength_mask)
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    # Проверяем, что сканирование было отправлено исполнителю
+    expected_log_part = f"Sent PERFORM_SCAN (ID:1, Mask:0x{wavelength_mask:02X})"
+    if not wait_for_log_message(expected_log_part, timeout=10):
+        print(f"ERROR: Log message part '{expected_log_part}' not found for PHOTOMETER_SCAN_SINGLE.")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
+    return True
+
 
 # --- ГЛАВНАЯ ФУНКЦИЯ ---
 def main():
@@ -418,6 +440,11 @@ def main():
         # 9. Перемешивание содержимого кюветы
         # (миксер 1, кювета 10, время 3000 мс, 2 цикла промывки)
         if all_tests_passed and not test_mixer_mix_command(1, 10, 3000, 2):
+            all_tests_passed = False
+
+        # 10. Фотометрическое сканирование кюветы
+        # (кювета 10, маска длин волн 0x03)
+        if all_tests_passed and not test_photometer_scan_single_command(10, 0x03):
             all_tests_passed = False
 
         # --- Сюда будут добавляться следующие шаги цикла ---

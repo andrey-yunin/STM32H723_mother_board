@@ -93,6 +93,17 @@ typedef struct {
 	uint8_t   wash_cycles;       // Количество циклов промывки после
 	} ParsedArgs_MixerMix;
 
+/**
+ * @brief Разобранные параметры для команды PHOTOMETER_SCAN_SINGLE (0x6100).
+ */
+typedef struct {
+	int32_t  rotate_steps;       // Рассчитанные шаги для позиционирования кюветы
+	uint8_t  wavelength_mask;    // Маска длин волн для сканирования
+	} ParsedArgs_PhotometerScanSingle;
+
+
+
+
 
 
 
@@ -115,7 +126,7 @@ typedef enum {
 	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
 	RECIPE_REAGENT_ROTATE, // added 13/02/2026
 	RECIPE_MIXER_MIX, // added 13/02/2026
-
+	RECIPE_PHOTOMETER_SCAN_SINGLE, // <-- НОВЫЙ ID РЕЦЕПТА ДЛЯ PHOTOMETER_SCAN_SINGLE
 
 	// --- [ADD_NEW_COMMAND] ---
 	// 1. Добавьте новый ID рецепта здесь
@@ -189,7 +200,7 @@ typedef struct {
 			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 13/02/2026
 			ParsedArgs_ReagentRotate reagent_rotate; // <-- added 13/02/2026
 			ParsedArgs_MixerMix mixer_mix; // <-- added 13/02/2026
-
+			ParsedArgs_PhotometerScanSingle photometer_scan_single; // <-- НОВОЕ ПОЛЕ ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
 
 
 			// Здесь будут добавляться другие команды

@@ -173,6 +173,24 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     	break;
 
 
+    case 0x6100: // PHOTOMETER_SCAN_SINGLE command added 16/02/2026
+    	if (params_len == 3) {
+    		uint16_t received_cuvette = read_uint16_from_buffer(&raw_params[0]);
+    		uint8_t received_mask = raw_params[2];
+
+    		// Вызов транслятора для получения шагов
+    		cmd->args.photometer_scan_single.rotate_steps = ParamTranslator_PhotometerCuvetteToSteps(received_cuvette);
+
+    		// Прямое сохранение маски
+    		cmd->args.photometer_scan_single.wavelength_mask = received_mask;
+
+    		cmd->args_type = ARGS_TYPE_PARSED;
+    		}
+    	else {
+    		success = false;
+    		}
+    	break;
+
     	// --- [ADD_NEW_PARSER] ---
 		// Здесь будут добавляться case для других команд
 

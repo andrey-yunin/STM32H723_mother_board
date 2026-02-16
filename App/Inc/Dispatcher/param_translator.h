@@ -47,6 +47,10 @@
 #define MIXER_Z_STEPS_DOWN           200  // Шагов для подъема лопатки миксера
 #define MIXER_ROT_STEPS_PER_CUVETTE  100   // Шагов на кювету для поворота миксера
 
+// Константы для трансляции параметров фотометра (заглушки)
+#define PHOTOMETER_STEPS_PER_CUVETTE 100 // Шагов на кювету для позиционирования фотометра
+
+
 
 
 
@@ -173,6 +177,16 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
     * @return int32_t Количество шагов для подъема лопатки.
     */
    int32_t ParamTranslator_MixerZToStepsUp(uint8_t mixer_id, uint16_t cuvette_number);
+
+
+   /**
+    * @brief Преобразует номер кюветы в шаги мотора для позиционирования фотометра.
+    *
+    * @param cuvette_number Номер целевой кюветы.
+    * @return int32_t Количество шагов для поворота фотометра к кювете.
+    */
+  int32_t ParamTranslator_PhotometerCuvetteToSteps(uint16_t cuvette_number);
+
 
 
 
