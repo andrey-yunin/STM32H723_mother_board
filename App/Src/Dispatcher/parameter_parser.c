@@ -70,7 +70,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		 }
     	 break;
 
-     case 0x4000: // Команда WASH_STATION_WASH <-- added 05/02/2026
+     case 0x4000: // Команда  <-- added 05/02/2026
     	 if (params_len == 3) {
     		 cmd->args.wash_station_wash.cycles = raw_params[0];
 

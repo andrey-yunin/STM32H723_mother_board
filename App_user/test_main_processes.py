@@ -374,6 +374,29 @@ def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> b
     print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
     return True
 
+# --- ТЕСТ команды WASH_STATION_WASH ---
+def test_wash_station_wash_command(cycles: int, cuvette: int) -> bool:
+    print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
+
+    # cycles (1 байт) + cuvette (2 байта, big-endian)
+    params = struct.pack('>BH', cycles, cuvette)
+
+    if not send_and_wait_ack(0x4000, params):
+        return False
+
+    # JobManager должен будет отправить логи о ROTATE_MOTOR с правильным количеством шагов
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:3, Steps:" # ID 3 for reaction disk
+    if not wait_for_log_message(expected_log_part, timeout=5): # timeout for log message
+        print(f"ERROR: Log message '{expected_log_part}' not found in DEVICE logs for WASH_STATION_WASH.")
+        return False
+
+    if not wait_for_done(0x4000):
+        return False
+
+    print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
+    return True
+
+
 # --- ТЕСТ команды DISPENSER_WASH ---
 def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int) -> bool:
     print(f"\n=== Тест команды DISPENSER_WASH (0x2000) для дозатора {dispenser_id}, объем {volume} мкл, циклов {cycles} ===")
@@ -475,6 +498,11 @@ def main():
         # 11. Полная промывка дозатора
         # (дозатор 1, объем 1000 мкл, 5 циклов)
         if all_tests_passed and not test_dispenser_wash_command(1, 1000, 5):
+            all_tests_passed = False
+
+        # 12. Промывка моечной станции
+        # (3 цикла, кювета 10 - параметры из test_combined_commands)
+        if all_tests_passed and not test_wash_station_wash_command(3, 10):
             all_tests_passed = False
             
         print("\n" + "="*20 + " ЗАВЕРШЕНИЕ ТЕСТА: ПРОМЫВКА СИСТЕМЫ " + "="*20)
