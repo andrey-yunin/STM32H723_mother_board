@@ -227,6 +227,34 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  }
 
 
+ /**
+  * @brief Реализация ParamTranslator_DispenserWashRotateSteps.
+  */
+ int32_t ParamTranslator_DispenserWashRotateSteps(void)
+ {
+	 return DISPENSER_ROT_STEPS_TO_WASH_STATION;
+	 }
+
+
+ /**
+  * @brief Реализация ParamTranslator_DispenserWashZToStepsDown.
+  */
+ int32_t ParamTranslator_DispenserWashZToStepsDown(void)
+ {
+	 return DISPENSER_Z_STEPS_DOWN_WASH_STATION;
+	 }
+
+
+ /**
+  * @brief Реализация ParamTranslator_DispenserWashZToStepsUp.
+  */
+ int32_t ParamTranslator_DispenserWashZToStepsUp(void)
+ {
+	 return DISPENSER_Z_STEPS_UP_WASH_STATION;
+	 }
+
+
+
 
 
  // Добавить реализации других функций преобразования здесь

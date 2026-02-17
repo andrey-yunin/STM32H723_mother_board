@@ -25,9 +25,12 @@ typedef struct {
  * @brief Разобранные параметры для команды DISPENSER_WASH (0x2000)
  */
 typedef struct {
-    uint8_t dispenser_id;
-    uint32_t volume;
-    uint16_t cycles;
+	uint8_t  dispenser_id;       // ID логического дозатора
+	uint32_t pump_duration_ms;   // Рассчитанная длительность работы насоса в мс
+	int32_t  rotate_steps;       // Рассчитанные шаги для поворота дозатора
+	int32_t  steps_down;         // Рассчитанные шаги для опускания иглы
+	int32_t  steps_up;           // Рассчитанные шаги для подъема иглы
+	uint16_t cycles;             // Количество циклов промывки
 } ParsedArgs_DispenserWash;
 
 

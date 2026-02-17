@@ -50,8 +50,11 @@
 // Константы для трансляции параметров фотометра (заглушки)
 #define PHOTOMETER_STEPS_PER_CUVETTE 100 // Шагов на кювету для позиционирования фотометра
 
-
-
+// Константы для трансляции параметров дозатора при работе с промывочной станцией
+#define WASH_STATION_SOURCE_TYPE             0x00 // Уникальный идентификатор для типа источника "промывочная станция"
+#define DISPENSER_ROT_STEPS_TO_WASH_STATION  2000 // Шаги для поворота дозатора к промывочной станции (X-Y)
+#define DISPENSER_Z_STEPS_DOWN_WASH_STATION  500  // Шаги для опускания иглы на промывочной станции (Z)
+#define DISPENSER_Z_STEPS_UP_WASH_STATION    -500 // Шаги для подъема иглы на промывочной станции (Z)
 
 
 // --- Translation Function Declarations ---
@@ -186,6 +189,33 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
     * @return int32_t Количество шагов для поворота фотометра к кювете.
     */
   int32_t ParamTranslator_PhotometerCuvetteToSteps(uint16_t cuvette_number);
+
+
+ /**
+  * @brief Возвращает шаги мотора для поворота дозатора к станции промывки.
+  *        Шаги фиксированы для текущей конфигурации промывочной станции.
+  * @return int32_t Количество шагов для поворота.
+  */
+ int32_t ParamTranslator_DispenserWashRotateSteps(void);
+
+
+ /**
+  * @brief Возвращает шаги мотора для опускания иглы на станции промывки.
+  *        Шаги фиксированы для текущей конфигурации промывочной станции.
+  * @return int32_t Количество шагов для опускания.
+  */
+ int32_t ParamTranslator_DispenserWashZToStepsDown(void);
+
+
+ /**
+  * @brief Возвращает шаги мотора для подъема иглы на станции промывки.
+  *        Шаги фиксированы для текущей конфигурации промывочной станции.
+  * @return int32_t Количество шагов для подъема.
+  */
+ int32_t ParamTranslator_DispenserWashZToStepsUp(void);
+
+
+
 
 
 

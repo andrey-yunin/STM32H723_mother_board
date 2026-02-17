@@ -39,6 +39,7 @@
  };
 
  /**
+
   * @brief Рецепт: Взять реагент (Aspirate Reagent). Пример смешанного рецепта.
   */
  const ProcessStep_t g_recipe_aspirate_reagent[] = {
@@ -102,61 +103,95 @@
   *       параметры из команды (dispenser_id, volume, cycles), чтобы адаптировать
   *       этот шаблон при выполнении.
   */
-const ProcessStep_t g_recipe_dispenser_wash[] = {
+ const ProcessStep_t g_recipe_dispenser_wash[] = {
+		 // Шаг 1: Поворот дозатора (Мотор 5 - X-Y ось дозатора) к промывочной станции.
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 5,
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0, // Placeholder, will be replaced by source
+					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS,
+					 .speed = 800,
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+			 },
 
-		// Шаг 1: Поворот дозатора (Мотор 1) к промывочной станции.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id = 1, .steps = 2000, .speed = 800 } }
-					},
-					.num_actions = 1
-					},
+		 // Шаг 2: Опускание иглы (Мотор 3 - Z-ось дозатора) в промывочную станцию.
+			 {.atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					 .motor_id = 3,
+					 .motor_id_source = PARAM_SOURCE_STATIC,
+					 .steps = 0, // Placeholder, will be replaced by source
+					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN,
+					 .speed = 400,
+					 .speed_source = PARAM_SOURCE_STATIC
+				}}
+			 },
+			 .num_actions = 1
+			 },
 
-		// Шаг 2: Опускание иглы (Мотор 2) в промывочную станцию.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id = 2, .steps = 500, .speed = 400 } }
-					},
-					.num_actions = 1
-					},
 
-		// Шаг 3: Включение насоса и короткая пауза для заполнения.
-		// JobManager будет адаптировать время паузы под параметр 'volume'.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_START_PUMP, .params.pump = { .pump_id = 1 } },
-					{ .action = ACTION_WAIT_MS,    .params.wait = { .delay_ms = 500 } }
-					},
-					.num_actions = 2 // Два действия выполняются одновременно
-					},
+		  // Шаг 3: Включение насоса и короткая пауза для заполнения.
+		  // JobManager будет адаптировать время паузы под параметр 'volume'.
+			 {.atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_START_PUMP, .params.pump = {
+					 .pump_id = 1, // Placeholder, will be replaced by source
+					 .pump_id_source = PARAM_SOURCE_STATIC
+				}},
+				{ .action = ACTION_WAIT_MS,    .params.wait = {
+					 .delay_ms = 0, // Placeholder, will be replaced by source
+					 .delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS
+				}}
+			},
+			.num_actions = 2 // Два действия выполняются одновременно
+			},
 
-		// Шаг 4: Выключение насоса.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = 1 } }
-					},
-					.num_actions = 1
-					},
 
-		// Шаг 5: Поднятие иглы (Мотор 2).
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id = 2, .steps = -500, .speed = 400 } }
-					},
-					.num_actions = 1
-					},
+			// Шаг 4: Выключение насоса.
+			{.atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_STOP_PUMP, .params.pump = {
+					  .pump_id = 1, // Placeholder, will be replaced by source
+					  .pump_id_source = PARAM_SOURCE_STATIC
+				 }}
+			 },
+			 .num_actions = 1
+			 },
 
-		// Шаг 6: Возврат дозатора (Мотор 1) в исходное положение.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id = 1, .steps = -2000, .speed = 800 } }
-					},
-		.num_actions = 1
-		},
 
-		// Маркер конца рецепта.
-		{ .atomic_actions = NULL, .num_actions = 0 }
-		};
+			 // Шаг 5: Поднятие иглы (Мотор 3 - Z-ось дозатора).
+			 {.atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
+					   .motor_id = 3,
+					   .motor_id_source = PARAM_SOURCE_STATIC,
+					   .steps = 0, // Placeholder, will be replaced by source
+					   .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP,
+					   .speed = 400,
+					   .speed_source = PARAM_SOURCE_STATIC
+				  }}
+			  },
+			  .num_actions = 1
+			  },
+
+
+			  // Шаг 6: Возврат дозатора (Мотор 5 - X-Y ось дозатора) в исходное положение.
+			  {.atomic_actions = (const AtomicAction_t[]){
+				  { .action = ACTION_HOME_MOTOR,
+					    .params.home_motor = { // Use HOME_MOTOR for consistency with other home actions
+						.motor_id = 5,
+						.motor_id_source = PARAM_SOURCE_STATIC,
+						.speed = 800, // Speed for homing
+						.speed_source = PARAM_SOURCE_STATIC
+				   }}
+				},
+				.num_actions = 1
+				},
+
+
+			  // Маркер конца рецепта.
+				{ .atomic_actions = NULL, .num_actions = 0 }
+		 };
 
 /**
  * @brief Рецепт: Промывка кюветы на моющей станции (WASH_STATION_WASH). added 05/02/20276

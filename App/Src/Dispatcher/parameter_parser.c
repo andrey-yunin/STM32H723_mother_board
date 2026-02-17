@@ -50,13 +50,18 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
      case 0x2000: // DISPENSER_WASH
     	 // Согласно документации: dispenser_id (1) + volume (2) + cycles (1) = 4 байта
     	 if (params_len == 4) {
-    		 cmd->args.dispenser_wash.dispenser_id = raw_params[0];
+    		 uint8_t received_dispenser_id = raw_params[0];
+    		 uint16_t received_volume = read_uint16_from_buffer(&raw_params[1]);
+    		 uint16_t received_cycles = raw_params[3];
 
-    		 // Читаем 2-байтный volume, начиная с 1-го байта
-    		 cmd->args.dispenser_wash.volume = read_uint16_from_buffer(&raw_params[1]);
+    		 cmd->args.dispenser_wash.dispenser_id = received_dispenser_id;
+    		 cmd->args.dispenser_wash.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
+    		 cmd->args.dispenser_wash.cycles = received_cycles;
+             // NEW: Call the dedicated wash-specific translator functions
+             cmd->args.dispenser_wash.rotate_steps = ParamTranslator_DispenserWashRotateSteps();
+             cmd->args.dispenser_wash.steps_down = ParamTranslator_DispenserWashZToStepsDown();
+             cmd->args.dispenser_wash.steps_up = ParamTranslator_DispenserWashZToStepsUp();
 
-    		 // Читаем 1-байтный cycles, начиная с 3-го байта
-    		 cmd->args.dispenser_wash.cycles = raw_params[3];
 
     		 cmd->args_type = ARGS_TYPE_PARSED; // Устанавливаем флаг ТОЛЬКО ЗДЕСЬ при успехе
     		 }

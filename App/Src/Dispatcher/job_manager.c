@@ -225,6 +225,16 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS: // <-- added for PHOTOMETER_SCAN_SINGLE 16/02/2026
 			return job->initial_cmd.args.photometer_scan_single.rotate_steps;
 
+		case PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS: // <-- added 16/02/2026 NEW for DISPENSER_WASH refactoring
+			return job->initial_cmd.args.dispenser_wash.rotate_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN: // <-- added 16/02/2026 NEW for DISPENSER_WASH refactoring
+			return job->initial_cmd.args.dispenser_wash.steps_down;
+
+		case PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP: // <-- added 16/02/2026NEW for DISPENSER_WASH refactoring
+			return job->initial_cmd.args.dispenser_wash.steps_up;
+
+
 
 
 		default:
@@ -238,8 +248,8 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 {
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
-			case PARAM_SOURCE_CMD_DISPENSER_VOLUME:
-				return job->initial_cmd.args.dispenser_wash.volume;
+			// case PARAM_SOURCE_CMD_DISPENSER_VOLUME: // This old source is removed
+				// return job->initial_cmd.args.dispenser_wash.volume;
 
 
 			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS: // added 12/02/2026
@@ -251,6 +261,8 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 			case PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS: // <-- added 16/02/2026
 				return job->initial_cmd.args.mixer_mix.duration_ms;
 
+			case PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS: // <-- NEW: Pump duration for DISPENSER_WASH
+				return job->initial_cmd.args.dispenser_wash.pump_duration_ms;
 
 
 				// Add other uint32_t sources here as needed

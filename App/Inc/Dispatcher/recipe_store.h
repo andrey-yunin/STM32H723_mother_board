@@ -19,14 +19,22 @@
  */
  typedef enum {
 	 PARAM_SOURCE_STATIC,               // Значение берется из самого рецепта (по умолчанию)
-     PARAM_SOURCE_CMD_INIT_MASK,        // Значение используется для фильтрации по маске из cmd.args.init.modules_mask
-     PARAM_SOURCE_CMD_DISPENSER_ID,     // Значение берется из cmd.args.dispenser_wash.dispenser_id
-     PARAM_SOURCE_CMD_DISPENSER_VOLUME, // Значение берется из cmd.args.dispenser_wash.volume
-     PARAM_SOURCE_CMD_DISPENSER_CYCLES, // Значение берется из cmd.args.dispenser_wash.cycles
+	 PARAM_SOURCE_CMD_INIT_MASK,        // Значение используется для фильтрации по маске из cmd.args.init.modules_mask
+
+
+	 // --- параметры для DISPENSER_WASH --- modified 16/02/2026
+	 PARAM_SOURCE_CMD_DISPENSER_ID,     // Значение берется из cmd.args.dispenser_wash.dispenser_id
+	 PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS, // НОВОЕ: Длительность работы насоса для DISPENSER_WASH
+	 PARAM_SOURCE_CMD_DISPENSER_CYCLES, // Значение берется из cmd.args.dispenser_wash.cycles
+	 PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN, // Шаги для опускания иглы в процессе DISPENSER_WASH
+	 PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP,   // Шаги для подъема иглы в процессе DISPENSER_WASH
+	 PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS, // Шаги для вращения дозатора в процессе DISPENSER_WASH
 
 	 // --- параметры для WASH_STATION_WASH --- added 05/02/2026
 	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES, // Это относится к циклам из команды, которые будут обрабатываться JobManager_Run для повторения рецепта
 	 PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Для рассчитанных шагов поворота диска
+
+
 	 // ---конец параметров для WASH_STATION_WASH ---
 
 	 // --- Параметры для SAMPLE_ROTATE --- added 11/02/2026
