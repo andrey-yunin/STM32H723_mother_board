@@ -254,6 +254,24 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	 }
 
 
+ /**
+  * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах
+  *        для насоса заполнения моющей станции.
+  * @param volume Объем в микролитрах.
+  * @return uint32_t Длительность работы насоса в мс.
+  */
+ uint32_t ParamTranslator_WashStationFillVolumeToPumpDurationMs(uint16_t volume) {
+	 if (volume == 0) {
+		 return 0;
+		 }
+
+	 // Используем общую константу для преобразования объема в длительность
+	 // В реальной системе может потребоваться более сложная логика
+	 // с учетом калибровки конкретного насоса моющей станции.
+	 return (uint32_t)volume * PUMP_MS_PER_UL;
+	 }
+
+
 
 
 

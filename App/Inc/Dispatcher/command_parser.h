@@ -105,9 +105,13 @@ typedef struct {
 	} ParsedArgs_PhotometerScanSingle;
 
 
-
-
-
+/**
+ * @brief Разобранные параметры для команды WASH_STATION_FILL (0x4100).
+ */
+typedef struct {
+	uint32_t pump_duration_ms; // Рассчитанная длительность работы насоса в мс
+	int32_t rotate_steps;      // Рассчитанные шаги для поворота реакционного диска
+	} ParsedArgs_WashStationFill;
 
 
 
@@ -129,7 +133,8 @@ typedef enum {
 	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
 	RECIPE_REAGENT_ROTATE, // added 13/02/2026
 	RECIPE_MIXER_MIX, // added 13/02/2026
-	RECIPE_PHOTOMETER_SCAN_SINGLE, // <-- НОВЫЙ ID РЕЦЕПТА ДЛЯ PHOTOMETER_SCAN_SINGLE
+	RECIPE_PHOTOMETER_SCAN_SINGLE, // <-- added 16/02/2026 НОВЫЙ ID РЕЦЕПТА ДЛЯ PHOTOMETER_SCAN_SINGLE
+	RECIPE_WASH_STATION_FILL, // <-- added 17/02/2026 NEW RECIPE ID FOR WASH_STATION_FILL
 
 	// --- [ADD_NEW_COMMAND] ---
 	// 1. Добавьте новый ID рецепта здесь
@@ -204,6 +209,8 @@ typedef struct {
 			ParsedArgs_ReagentRotate reagent_rotate; // <-- added 13/02/2026
 			ParsedArgs_MixerMix mixer_mix; // <-- added 13/02/2026
 			ParsedArgs_PhotometerScanSingle photometer_scan_single; // <-- НОВОЕ ПОЛЕ ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
+			ParsedArgs_WashStationFill wash_station_fill; // <-- added 17/02/2026 Новое поле для WASH_STATION_FILL (0x4100)
+
 
 
 			// Здесь будут добавляться другие команды

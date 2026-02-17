@@ -74,7 +74,15 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 			.min_params_len = 3,   // cuvette (2) + wavelength_mask (1) = 3 байта
 			.max_params_len = 3,
 			.recipe_id = RECIPE_PHOTOMETER_SCAN_SINGLE
-			}
+			},
+
+		// WASH_STATION_FILL descriptor: <-- added 17/02/2026
+		{.command_code = 0x4100, // Код команды WASH_STATION_FILL
+			.min_params_len = 4,   // cuvette (2) + volume (2) = 4 байта
+			.max_params_len = 4,
+			.recipe_id = RECIPE_WASH_STATION_FILL
+			},
+
 
 
 		 // Здесь будут добавляться другие команды-рецепты

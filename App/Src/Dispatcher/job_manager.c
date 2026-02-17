@@ -234,7 +234,8 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP: // <-- added 16/02/2026NEW for DISPENSER_WASH refactoring
 			return job->initial_cmd.args.dispenser_wash.steps_up;
 
-
+		case PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS: // added 17/02/2026 New for WASH_STATION_FILL
+			return job->initial_cmd.args.wash_station_fill.rotate_steps;
 
 
 		default:
@@ -263,6 +264,10 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 
 			case PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS: // <-- NEW: Pump duration for DISPENSER_WASH
 				return job->initial_cmd.args.dispenser_wash.pump_duration_ms;
+
+			case PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS: // added 17/02/2026 New for WASH_STATION_FILL
+				return job->initial_cmd.args.wash_station_fill.pump_duration_ms;
+
 
 
 				// Add other uint32_t sources here as needed

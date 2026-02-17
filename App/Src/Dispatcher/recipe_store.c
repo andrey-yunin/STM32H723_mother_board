@@ -201,7 +201,7 @@
  *       этот шаблон при выполнении.
  */
 
-const ProcessStep_t g_recipe_wash_station_wash[] = {
+ const ProcessStep_t g_recipe_wash_station_wash[] = {
 		// Шаг 1: Поворот реакционного диска (Мотор 3) к моющей станции.
 		// `steps` будут взяты из значения cuvette в команде.
 		{
@@ -257,6 +257,60 @@ const ProcessStep_t g_recipe_wash_station_wash[] = {
 		{
 				.atomic_actions = NULL, .num_actions = 0 }
 		};
+
+
+/**
+ * @brief Рецепт: Заполнение кюветы на моющей станции (WASH_STATION_FILL). added 17/02/2026
+ * Выполняется командой WASH_STATION_FILL (0x4100).
+ */
+ const ProcessStep_t g_recipe_wash_station_fill[] = {
+		 // Шаг 1: Поворот реакционного диска (Мотор 3) к кювете для заполнения.
+		 {.atomic_actions = (const AtomicAction_t[]){
+			 { .action = ACTION_ROTATE_MOTOR,
+				 .params.rotate_motor = {
+						 .motor_id = 3,
+						 .motor_id_source = PARAM_SOURCE_STATIC, // ID мотора реакционного диска (предположение)
+						 .steps = 0,
+						 .steps_source = PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
+						 .speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
+					}}
+			 },
+			 .num_actions = 1
+			 },
+
+		  // Шаг 2: Запуск насоса для заполнения и ожидание.
+		  {.atomic_actions = (const AtomicAction_t[]){
+			  { .action = ACTION_START_PUMP,
+				  .params.pump = {
+						  .pump_id = 2,
+						  .pump_id_source = PARAM_SOURCE_STATIC
+					  }}, // ID насоса заполнения (предположение)
+			   { .action = ACTION_WAIT_MS,
+				   .params.wait = {
+						   .delay_ms = 0, // Будет заменено динамическим параметром
+						   .delay_ms_source = PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS
+					 }}
+				},
+				.num_actions = 2
+				},
+
+
+			// Шаг 3: Остановка насоса заполнения.
+			{.atomic_actions = (const AtomicAction_t[]){
+				{ .action = ACTION_STOP_PUMP,
+					.params.pump = {
+							.pump_id = 2,
+							.pump_id_source = PARAM_SOURCE_STATIC
+				      }} // ID насоса заполнения (предположение)
+				},
+				.num_actions = 1
+				},
+
+		    // Маркер конца рецепта.
+				{ .atomic_actions = NULL, .num_actions = 0 }
+
+		 };
+
 
 // Определение шагов для рецепта SAMPLE_ROTATE (0x5110) added 11/02/2026
 
@@ -587,6 +641,8 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
 
 
+
+
 // --- [ADD_NEW_COMMAND] ---
 // 3. Скопируйте существующий рецепт как шаблон и создайте здесь свой,
 //    например, g_recipe_wash_cuvette.
@@ -635,6 +691,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
         case RECIPE_PHOTOMETER_SCAN_SINGLE: // <-- added 16/02/2026
         	return g_recipe_photometer_scan_single;
+
+        case RECIPE_WASH_STATION_FILL: // <-- added 17/02/2026 Новое: Заполнение моющей станции
+        	return g_recipe_wash_station_fill;
+
 
 
 

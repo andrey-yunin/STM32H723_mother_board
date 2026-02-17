@@ -196,6 +196,26 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		}
     	break;
 
+
+    case 0x4100: // WASH_STATION_FILL command added 17/02/2026
+    	// cuvette (2) + volume (2) = 4 байта
+    	if (params_len == 4) {
+    		uint16_t received_cuvette = read_uint16_from_buffer(&raw_params[0]);
+    		uint16_t received_volume = read_uint16_from_buffer(&raw_params[2]);
+
+    		// Расчет шагов для поворота диска
+    		cmd->args.wash_station_fill.rotate_steps = ParamTranslator_CuvetteToSteps(received_cuvette);
+
+    		// Расчет длительности работы насоса для заполнения моющей станции.
+    		cmd->args.wash_station_fill.pump_duration_ms = ParamTranslator_WashStationFillVolumeToPumpDurationMs(received_volume);
+    		cmd->args_type = ARGS_TYPE_PARSED;
+    		}
+    	else {
+    		success = false;
+    		}
+    	break;
+
+
     	// --- [ADD_NEW_PARSER] ---
 		// Здесь будут добавляться case для других команд
 

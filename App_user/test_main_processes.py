@@ -374,6 +374,30 @@ def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> b
     print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
     return True
 
+# --- ТЕСТ команды WASH_STATION_FILL ---
+def test_wash_station_fill_command(cuvette: int, volume: int) -> bool:
+    print(f"\n=== Тест команды WASH_STATION_FILL (0x4100) для кюветы {cuvette}, объем {volume} мкл ===")
+    command_code = 0x4100
+    # cuvette (2 байта, big-endian) + volume (2 байта, big-endian)
+    params = struct.pack('>HH', cuvette, volume)
+
+    if not send_and_wait_ack(command_code, params):
+        return False
+
+    # Проверяем, что лог о запуске насоса был отправлен
+    # Assuming Pump ID 2 for wash station fill, from recipe_store.c
+    expected_log_part_pump = f"Sent START_PUMP (ID:2)"
+    if not wait_for_log_message(expected_log_part_pump, timeout=5):
+        print(f"ERROR: Log message '{expected_log_part_pump}' not found in DEVICE logs for WASH_STATION_FILL (pump start).")
+        return False
+
+    if not wait_for_done(command_code):
+        return False
+
+    print(f"=== Тест WASH_STATION_FILL для кюветы {cuvette}, объем {volume} мкл пройден успешно ===")
+    return True
+
+
 # --- ТЕСТ команды WASH_STATION_WASH ---
 def test_wash_station_wash_command(cycles: int, cuvette: int) -> bool:
     print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
@@ -500,7 +524,12 @@ def main():
         if all_tests_passed and not test_dispenser_wash_command(1, 1000, 5):
             all_tests_passed = False
 
-        # 12. Промывка моечной станции
+        # 12. Заполнение моечной станции
+        # (кювета 10, объем 500 мкл)
+        if all_tests_passed and not test_wash_station_fill_command(10, 500):
+            all_tests_passed = False
+
+        # 13. Промывка моечной станции
         # (3 цикла, кювета 10 - параметры из test_combined_commands)
         if all_tests_passed and not test_wash_station_wash_command(3, 10):
             all_tests_passed = False
