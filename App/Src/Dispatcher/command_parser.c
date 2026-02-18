@@ -360,7 +360,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
 
 
     // Если мы дошли до сюда, команда не была найдена ни в одной из таблиц.
-    Dispatcher_SendNack(command_code, 0x0001); // ERR_UNKNOWN_COMMAND
+    Dispatcher_SendError(command_code, 0x0002); // ERR_UNKNOWN_COMMAND
     return;
 }
 

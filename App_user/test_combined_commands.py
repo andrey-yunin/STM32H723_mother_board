@@ -326,8 +326,8 @@ def test_unknown_command():
     print(f"Отправка команды 0x{command_code:04x}: {' '.join(f'{b:02x}' for b in command_packet)}")
     ser.write(command_packet)
     
-    nack_received = False
-    ack_received = False
+    error_received = False
+    expected_error_code_received = False
     
     start_time = time.time()
     while time.time() - start_time < RESPONSE_TIMEOUT:
@@ -335,16 +335,20 @@ def test_unknown_command():
             msg = received_messages_queue.get(timeout=0.1)
             if msg["type"] == "binary" and msg["content"]["command_code"] == command_code:
                 response_type = msg["content"]["response_type"]
-                if response_type == 0x00:  # NACK
-                    nack_received = True
-                    print(f"Получен ожидаемый NACK для 0x{command_code:04x}.")
+                if response_type == 0x04:  # ERROR
+                    error_received = True
+                    received_error_code = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                    if received_error_code == 0x0002: # ERR_UNKNOWN_CMD
+                        expected_error_code_received = True
+                        print(f"Получен ожидаемый ERROR (0x04) для 0x{command_code:04x} с кодом 0x{received_error_code:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    else:
+                        print(f"ERROR: Получен ERROR для 0x{command_code:04x} с неожиданным кодом 0x{received_error_code:04x}!")
+                elif response_type == 0x00:  # NACK
+                    print(f"ERROR: Получен NACK для неизвестной команды 0x{command_code:04x}! Ожидался ERROR.")
                 elif response_type == 0x01:  # ACK
-                    ack_received = True
                     print(f"ERROR: Получен ACK для неизвестной команды 0x{command_code:04x}!")
-                # Мы можем выйти из цикла, как только получим интересующий нас ответ
                 break
             else:
-                 # Игнорируем другие сообщения в этом тесте
                  if msg["type"] == "text":
                     print(f"DEVICE (unexpected): {msg['content']}")
                  else:
@@ -353,11 +357,11 @@ def test_unknown_command():
         except queue.Empty:
             continue
 
-    if ack_received:
-        print("Тест провален: был получен ACK.")
+    if not error_received:
+        print("Тест провален: не был получен ERROR.")
         return False
-    if not nack_received:
-        print("Тест провален: не был получен NACK.")
+    if not expected_error_code_received:
+        print("Тест провален: получен ERROR, но с неверным кодом ошибки.")
         return False
     
     print("Тест неизвестной команды пройден успешно.")
