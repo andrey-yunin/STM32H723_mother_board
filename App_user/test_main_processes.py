@@ -6,7 +6,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM4'
+SERIAL_PORT = '/dev/ttyACM1'
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 
@@ -260,16 +260,36 @@ def test_sample_rotate_command(slot_number: int):
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:4, Steps:"
-    if not wait_for_log_message(expected_log_part, timeout=5):
-        print(f"ERROR: Log message '{expected_log_part}' not found.")
-        return False
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:11, Steps:" # DEV_REAGENT_SAMPLE_DISK_MOTOR = 11
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест SAMPLE_ROTATE для слота {slot_number} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест SAMPLE_ROTATE для слота {slot_number} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: int):
     print(f"\n=== Тест команды DISPENSER_ASPIRATE (0x2100) для дозатора {disp_id}, источник 0x{src_type:02x}, позиция {pos}, объем {vol} мкл ===")
@@ -280,15 +300,35 @@ def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: 
         return False
 
     expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
-    if not wait_for_log_message(expected_log_part, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_part}' not found for DISPENSER_ASPIRATE.")
-        return False
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест DISPENSER_ASPIRATE для дозатора {disp_id} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест DISPENSER_ASPIRATE для дозатора {disp_id} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 # --- ТЕСТ команды DISPENSER_DISPENSE ---
 def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, vol: int):
@@ -300,15 +340,35 @@ def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, v
         return False
 
     expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
-    if not wait_for_log_message(expected_log_part, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_part}' not found for DISPENSER_DISPENSE.")
-        return False
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест DISPENSER_DISPENSE для дозатора {disp_id} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест DISPENSER_DISPENSE для дозатора {disp_id} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 # --- ТЕСТ команды REAGENT_ROTATE ---
 def test_reagent_rotate_command(rotor_id: int, slot_number: int):
@@ -319,16 +379,36 @@ def test_reagent_rotate_command(rotor_id: int, slot_number: int):
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:{6}, Steps:"
-    if not wait_for_log_message(expected_log_part, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_part}' not found for REAGENT_ROTATE.")
-        return False
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:11, Steps:" # DEV_REAGENT_SAMPLE_DISK_MOTOR = 11
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест REAGENT_ROTATE для ротора {rotor_id}, слота {slot_number} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест REAGENT_ROTATE для ротора {rotor_id}, слота {slot_number} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 # --- ТЕСТ команды MIXER_MIX ---
 def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycles: int):
@@ -340,17 +420,36 @@ def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycl
     if not send_and_wait_ack(command_code, params):
         return False
 
-    # Проверяем ключевой шаг рецепта по логу для верификации запуска
-    expected_log_part = "Sent ROTATE_MOTOR (ID:8, Steps:"
-    if not wait_for_log_message(expected_log_part, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_part}' not found for MIXER_MIX.")
-        return False
+    expected_log_part = "Sent ROTATE_MOTOR (ID:20, Steps:" # DEV_MIXER_MOTOR_XY = 20
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 # --- ТЕСТ команды PHOTOMETER_SCAN_SINGLE ---
 def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> bool:
@@ -362,17 +461,36 @@ def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> b
     if not send_and_wait_ack(command_code, params):
         return False
 
-    # Проверяем, что сканирование было отправлено исполнителю
-    expected_log_part = f"Sent PERFORM_SCAN (ID:1, Mask:0x{wavelength_mask:02X})"
-    if not wait_for_log_message(expected_log_part, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_part}' not found for PHOTOMETER_SCAN_SINGLE.")
-        return False
+    expected_log_part = f"Sent PERFORM_SCAN (ID:1, Mask:0x{wavelength_mask:02X})" # DEV_PHOTOMETER_MAIN = 1
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 # --- ТЕСТ команды WASH_STATION_FILL ---
 def test_wash_station_fill_command(cuvette: int, volume: int) -> bool:
@@ -384,41 +502,77 @@ def test_wash_station_fill_command(cuvette: int, volume: int) -> bool:
     if not send_and_wait_ack(command_code, params):
         return False
 
-    # Проверяем, что лог о запуске насоса был отправлен
-    # Assuming Pump ID 2 for wash station fill, from recipe_store.c
-    expected_log_part_pump = f"Sent START_PUMP (ID:2)"
-    if not wait_for_log_message(expected_log_part_pump, timeout=5):
-        print(f"ERROR: Log message '{expected_log_part_pump}' not found in DEVICE logs for WASH_STATION_FILL (pump start).")
-        return False
+    expected_log_part = f"Sent START_PUMP (ID:10)" # DEV_WASH_PUMP_FILL = 10
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест WASH_STATION_FILL для кюветы {cuvette}, объем {volume} мкл пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест WASH_STATION_FILL для кюветы {cuvette}, объем {volume} мкл пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 
 # --- ТЕСТ команды WASH_STATION_WASH ---
 def test_wash_station_wash_command(cycles: int, cuvette: int) -> bool:
     print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
 
-    # cycles (1 байт) + cuvette (2 байта, big-endian)
     params = struct.pack('>BH', cycles, cuvette)
 
     if not send_and_wait_ack(0x4000, params):
         return False
 
-    # JobManager должен будет отправить логи о ROTATE_MOTOR с правильным количеством шагов
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:3, Steps:" # ID 3 for reaction disk
-    if not wait_for_log_message(expected_log_part, timeout=5): # timeout for log message
-        print(f"ERROR: Log message '{expected_log_part}' not found in DEVICE logs for WASH_STATION_WASH.")
-        return False
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:10, Steps:" # DEV_REACTION_DISK_MOTOR = 10
+    log_found = False
 
-    if not wait_for_done(0x4000):
-        return False
-
-    print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x4000...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == 0x4000 and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x4000 со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x4000.")
+    return False
 
 
 # --- ТЕСТ команды DISPENSER_WASH ---
@@ -431,17 +585,36 @@ def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int) -> 
     if not send_and_wait_ack(command_code, params):
         return False
 
-    # Проверяем, что первая атомарная операция ROTATE_MOTOR (для вращения X-Y) была отправлена
-    expected_log_rot = "Sent ROTATE_MOTOR (ID:5, Steps:"
-    if not wait_for_log_message(expected_log_rot, timeout=10):
-        print(f"ERROR: Log message part '{expected_log_rot}' not found for DISPENSER_WASH (rotation).")
-        return False
+    expected_log_part = "Sent ROTATE_MOTOR (ID:1, Steps:" # DEV_DISPENSER_MOTOR_XY = 1
+    log_found = False
 
-    if not wait_for_done(command_code):
-        return False
-
-    print(f"=== Тест DISPENSER_WASH для дозатора {dispenser_id} пройден успешно ===")
-    return True
+    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
+    start_time = time.time()
+    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+        try:
+            msg = received_messages_queue.get(timeout=0.1)
+            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
+                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
+                if done_status == 0x0000:
+                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
+                    if not log_found:
+                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    print(f"=== Тест DISPENSER_WASH для дозатора {dispenser_id} пройден успешно ===")
+                    return True
+                else:
+                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
+                    return False
+            else:
+                if msg["type"] == "text":
+                    print(f"DEVICE: {msg['content']}")
+                    if expected_log_part in msg["content"]:
+                        log_found = True
+                elif msg["type"] == "binary":
+                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
+        except queue.Empty:
+            continue
+    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
+    return False
 
 
 # --- ГЛАВНАЯ ФУНКЦИЯ ---

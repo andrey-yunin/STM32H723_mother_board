@@ -6,6 +6,7 @@
  */
 
 #include "recipe_store.h"
+#include "device_mapping.h"
 #include <stddef.h> // Для NULL
 
  // ============================================================================
@@ -18,18 +19,18 @@
   * Выполняется один раз при старте для приведения механизмов в известное положение.
   */
  const ProcessStep_t g_recipe_initialize_system[] = {
-     // Шаг 1: Поиск "дома" для иглы (мотор 2). Группа из ОДНОГО действия.
+     // Шаг 1: Поиск "дома" для иглы дозатора (Z-ось).
      {
-         .atomic_actions = (const AtomicAction_t[]){ // Составной литерал для группы из одного действия
-             { .action = ACTION_HOME_MOTOR, .params.home_motor = { .motor_id=2, .speed=150 } }
+         .atomic_actions = (const AtomicAction_t[]){
+             { .action = ACTION_HOME_MOTOR, .params.home_motor = { .motor_id=DEV_DISPENSER_MOTOR_Z, .speed=150 } }
          },
          .num_actions = 1
      },
 
-     // Шаг 2: Поиск "дома" для дозатора (мотор 1). Группа из ОДНОГО действия.
+     // Шаг 2: Поиск "дома" для дозатора (X-Y ось).
      {
-         .atomic_actions = (const AtomicAction_t[]){ // Составной литерал для группы из одного действия
-             { .action = ACTION_HOME_MOTOR, .params.home_motor = { .motor_id=1, .speed=400 } }
+         .atomic_actions = (const AtomicAction_t[]){
+             { .action = ACTION_HOME_MOTOR, .params.home_motor = { .motor_id=DEV_DISPENSER_MOTOR_XY, .speed=400 } }
          },
          .num_actions = 1
      },
@@ -43,18 +44,18 @@
   * @brief Рецепт: Взять реагент (Aspirate Reagent). Пример смешанного рецепта.
   */
  const ProcessStep_t g_recipe_aspirate_reagent[] = {
-     // Шаг 1: Поворот дозатора (мотор 1) к пробирке. Группа из ОДНОГО действия.
+     // Шаг 1: Поворот дозатора (X-Y ось) к пробирке.
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=1, .steps=1000, .speed=500 } }
+             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=DEV_DISPENSER_MOTOR_XY, .steps=1000, .speed=500 } }
          },
          .num_actions = 1
      },
 
-     // Шаг 2: Опускание иглы (мотор 2). Группа из ОДНОГО действия.
+     // Шаг 2: Опускание иглы (Z-ось).
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=2, .steps=200, .speed=100 } }
+             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=DEV_DISPENSER_MOTOR_Z, .steps=200, .speed=100 } }
          },
          .num_actions = 1
      },
@@ -62,32 +63,32 @@
      // Шаг 3: Включение насоса и небольшая пауза. Группа из ДВУХ действий (параллельно).
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_START_PUMP,   .params.pump = { .pump_id=1 } },
+             { .action = ACTION_START_PUMP,   .params.pump = { .pump_id=DEV_DISPENSER_PUMP } },
              { .action = ACTION_WAIT_MS,      .params.wait = { .delay_ms=500 } }
          },
          .num_actions = 2
      },
 
-     // Шаг 4: Выключение насоса. Группа из ОДНОГО действия.
+     // Шаг 4: Выключение насоса.
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_STOP_PUMP,    .params.pump = { .pump_id=1 } }
+             { .action = ACTION_STOP_PUMP,    .params.pump = { .pump_id=DEV_DISPENSER_PUMP } }
          },
          .num_actions = 1
      },
 
-     // Шаг 5: Поднятие иглы (мотор 2 в обратную сторону). Группа из ОДНОГО действия.
+     // Шаг 5: Поднятие иглы (Z-ось, обратное направление).
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=2, .steps=-200, .speed=100 } }
+             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=DEV_DISPENSER_MOTOR_Z, .steps=-200, .speed=100 } }
          },
          .num_actions = 1
      },
 
-     // Шаг 6: Возврат дозатора (мотор 1 в обратную сторону). Группа из ОДНОГО действия.
+     // Шаг 6: Возврат дозатора (X-Y ось, обратное направление).
      {
          .atomic_actions = (const AtomicAction_t[]){
-             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=1, .steps=-1000, .speed=500 } }
+             { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = { .motor_id=DEV_DISPENSER_MOTOR_XY, .steps=-1000, .speed=500 } }
          },
          .num_actions = 1
      },
@@ -104,10 +105,10 @@
   *       этот шаблон при выполнении.
   */
  const ProcessStep_t g_recipe_dispenser_wash[] = {
-		 // Шаг 1: Поворот дозатора (Мотор 5 - X-Y ось дозатора) к промывочной станции.
+		 // Шаг 1: Поворот дозатора (X-Y ось) к промывочной станции.
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 5,
+					 .motor_id = DEV_DISPENSER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0, // Placeholder, will be replaced by source
 					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS,
@@ -118,12 +119,12 @@
 			 .num_actions = 1
 			 },
 
-		 // Шаг 2: Опускание иглы (Мотор 3 - Z-ось дозатора) в промывочную станцию.
+		 // Шаг 2: Опускание иглы (Z-ось дозатора) в промывочную станцию.
 			 {.atomic_actions = (const AtomicAction_t[]){
 				 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 3,
+					 .motor_id = DEV_DISPENSER_MOTOR_Z,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
-					 .steps = 0, // Placeholder, will be replaced by source
+					 .steps = 0,
 					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN,
 					 .speed = 400,
 					 .speed_source = PARAM_SOURCE_STATIC
@@ -133,26 +134,25 @@
 			 },
 
 
-		  // Шаг 3: Включение насоса и короткая пауза для заполнения.
-		  // JobManager будет адаптировать время паузы под параметр 'volume'.
+		  // Шаг 3: Включение насоса дозатора и ожидание.
 			 {.atomic_actions = (const AtomicAction_t[]){
 				 { .action = ACTION_START_PUMP, .params.pump = {
-					 .pump_id = 1, // Placeholder, will be replaced by source
+					 .pump_id = DEV_DISPENSER_PUMP,
 					 .pump_id_source = PARAM_SOURCE_STATIC
 				}},
 				{ .action = ACTION_WAIT_MS,    .params.wait = {
-					 .delay_ms = 0, // Placeholder, will be replaced by source
+					 .delay_ms = 0,
 					 .delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS
 				}}
 			},
-			.num_actions = 2 // Два действия выполняются одновременно
+			.num_actions = 2
 			},
 
 
-			// Шаг 4: Выключение насоса.
+			// Шаг 4: Выключение насоса дозатора.
 			{.atomic_actions = (const AtomicAction_t[]){
 				 { .action = ACTION_STOP_PUMP, .params.pump = {
-					  .pump_id = 1, // Placeholder, will be replaced by source
+					  .pump_id = DEV_DISPENSER_PUMP,
 					  .pump_id_source = PARAM_SOURCE_STATIC
 				 }}
 			 },
@@ -160,12 +160,12 @@
 			 },
 
 
-			 // Шаг 5: Поднятие иглы (Мотор 3 - Z-ось дозатора).
+			 // Шаг 5: Поднятие иглы (Z-ось дозатора).
 			 {.atomic_actions = (const AtomicAction_t[]){
 				 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					   .motor_id = 3,
+					   .motor_id = DEV_DISPENSER_MOTOR_Z,
 					   .motor_id_source = PARAM_SOURCE_STATIC,
-					   .steps = 0, // Placeholder, will be replaced by source
+					   .steps = 0,
 					   .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP,
 					   .speed = 400,
 					   .speed_source = PARAM_SOURCE_STATIC
@@ -175,13 +175,13 @@
 			  },
 
 
-			  // Шаг 6: Возврат дозатора (Мотор 5 - X-Y ось дозатора) в исходное положение.
+			  // Шаг 6: Возврат дозатора (X-Y ось) в исходное положение.
 			  {.atomic_actions = (const AtomicAction_t[]){
 				  { .action = ACTION_HOME_MOTOR,
-					    .params.home_motor = { // Use HOME_MOTOR for consistency with other home actions
-						.motor_id = 5,
+					    .params.home_motor = {
+						.motor_id = DEV_DISPENSER_MOTOR_XY,
 						.motor_id_source = PARAM_SOURCE_STATIC,
-						.speed = 800, // Speed for homing
+						.speed = 800,
 						.speed_source = PARAM_SOURCE_STATIC
 				   }}
 				},
@@ -202,13 +202,12 @@
  */
 
  const ProcessStep_t g_recipe_wash_station_wash[] = {
-		// Шаг 1: Поворот реакционного диска (Мотор 3) к моющей станции.
-		// `steps` будут взяты из значения cuvette в команде.
+		// Шаг 1: Поворот реакционного диска к моющей станции.
 		{
 				.atomic_actions = (const AtomicAction_t[]){
 					{ .action = ACTION_ROTATE_MOTOR,
 						.params.rotate_motor = {
-							.motor_id = 3, .motor_id_source = PARAM_SOURCE_STATIC, // ID мотора для реакционного диска (предположение)
+							.motor_id = DEV_REACTION_DISK_MOTOR, .motor_id_source = PARAM_SOURCE_STATIC,
 							.steps = 3000, .steps_source = PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
 							.speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
 					}}
@@ -216,12 +215,11 @@
 					.num_actions = 1
 					},
 
-		// Шаг 2: Заполнение кюветы (Насос 2).
-		// Длительность заполнения фиксирована.
+		// Шаг 2: Заполнение кюветы (насос заполнения).
     	{
 				.atomic_actions = (const AtomicAction_t[]){
 					{ .action = ACTION_START_PUMP,
-						.params.pump = { .pump_id = 2, .pump_id_source = PARAM_SOURCE_STATIC } }, // ID насоса заполнения (предположение)
+						.params.pump = { .pump_id = DEV_WASH_PUMP_FILL, .pump_id_source = PARAM_SOURCE_STATIC } },
 					{ .action = ACTION_WAIT_MS,    .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC }} // Задержка фиксирована
 					},
 					.num_actions = 2
@@ -230,16 +228,15 @@
 		// Шаг 3: Остановка насоса заполнения.
 		{
 				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = 2, .pump_id_source = PARAM_SOURCE_STATIC } } // ID насоса заполнения (предположение)
+					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = DEV_WASH_PUMP_FILL, .pump_id_source = PARAM_SOURCE_STATIC } }
 					},
 					.num_actions = 1
 					},
 
-		// Шаг 4: Слив из кюветы (Насос 3).
-		// TODO: delay_ms должен быть рассчитан динамически.
+		// Шаг 4: Слив из кюветы (насос слива).
 		{
 				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_START_PUMP, .params.pump = { .pump_id = 3, .pump_id_source = PARAM_SOURCE_STATIC } },
+					{ .action = ACTION_START_PUMP, .params.pump = { .pump_id = DEV_WASH_PUMP_DRAIN, .pump_id_source = PARAM_SOURCE_STATIC } },
 					{ .action = ACTION_WAIT_MS, .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC } }
 					},
 					.num_actions = 2
@@ -248,7 +245,7 @@
 		// Шаг 5: Остановка насоса слива.
 		{
 				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = 3, .pump_id_source = PARAM_SOURCE_STATIC } }
+					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = DEV_WASH_PUMP_DRAIN, .pump_id_source = PARAM_SOURCE_STATIC } }
 					},
 					.num_actions = 1
 					},
@@ -264,12 +261,12 @@
  * Выполняется командой WASH_STATION_FILL (0x4100).
  */
  const ProcessStep_t g_recipe_wash_station_fill[] = {
-		 // Шаг 1: Поворот реакционного диска (Мотор 3) к кювете для заполнения.
+		 // Шаг 1: Поворот реакционного диска к кювете для заполнения.
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR,
 				 .params.rotate_motor = {
-						 .motor_id = 3,
-						 .motor_id_source = PARAM_SOURCE_STATIC, // ID мотора реакционного диска (предположение)
+						 .motor_id = DEV_REACTION_DISK_MOTOR,
+						 .motor_id_source = PARAM_SOURCE_STATIC,
 						 .steps = 0,
 						 .steps_source = PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
 						 .speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
@@ -278,13 +275,13 @@
 			 .num_actions = 1
 			 },
 
-		  // Шаг 2: Запуск насоса для заполнения и ожидание.
+		  // Шаг 2: Запуск насоса заполнения и ожидание.
 		  {.atomic_actions = (const AtomicAction_t[]){
 			  { .action = ACTION_START_PUMP,
 				  .params.pump = {
-						  .pump_id = 2,
+						  .pump_id = DEV_WASH_PUMP_FILL,
 						  .pump_id_source = PARAM_SOURCE_STATIC
-					  }}, // ID насоса заполнения (предположение)
+					  }},
 			   { .action = ACTION_WAIT_MS,
 				   .params.wait = {
 						   .delay_ms = 0, // Будет заменено динамическим параметром
@@ -299,9 +296,9 @@
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_STOP_PUMP,
 					.params.pump = {
-							.pump_id = 2,
+							.pump_id = DEV_WASH_PUMP_FILL,
 							.pump_id_source = PARAM_SOURCE_STATIC
-				      }} // ID насоса заполнения (предположение)
+				      }}
 				},
 				.num_actions = 1
 				},
@@ -317,8 +314,8 @@
 const ProcessStep_t g_recipe_sample_rotate[] = {
 		{ .atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					.motor_id = 4,       // Идентификатор мотора диска образцов (статический)
-					.motor_id_source = PARAM_SOURCE_STATIC, // Источник ID мотора - статический
+					.motor_id = DEV_REAGENT_SAMPLE_DISK_MOTOR,
+					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,                             // Статическое значение будет перезаписано динамически
 					.steps_source = PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // Шаги из команды SAMPLE_ROTATE
 					.speed = 1000,                          // Скорость вращения (статическая)
@@ -336,17 +333,15 @@ const ProcessStep_t g_recipe_sample_rotate[] = {
  */
 
 const ProcessStep_t g_recipe_dispenser_aspirate[] = {
-		// Шаг 1: Поворот дозатора к источнику (если требуется)
-		// Предполагается, что мотор ID 5 - это ось вращения дозатора (предположение).
+		// Шаг 1: Поворот дозатора (X-Y ось) к источнику.
 
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					.motor_id = 5, // ID мотора для оси X дозатора (предположение)
+					.motor_id = DEV_DISPENSER_MOTOR_XY,
 					.motor_id_source = PARAM_SOURCE_STATIC,
-					.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром из cmd->args.dispenser_aspirate.rotate_steps
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS, // Источник для rotate_steps
-
-					.speed = 500, // Статическая скорость
+					.steps = 0,
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS,
+					.speed = 500,
 					.speed_source = PARAM_SOURCE_STATIC
 					}}
 				},
@@ -354,16 +349,15 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 		},
 
 
-		// Шаг 2: Опускание иглы (Z-ось)
-		// Предполагается, что мотор ID 3 - это ось Z дозатора.
+		// Шаг 2: Опускание иглы (Z-ось дозатора).
 
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					.motor_id = 3, // ID мотора для оси X дозатора (предположение)
+					.motor_id = DEV_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
-					.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром из cmd->args.dispenser_aspirate.steps_down
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN, // Источник для steps_down,
-					.speed = 200, // Статическая скорость
+					.steps = 0,
+					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN,
+					.speed = 200,
 					.speed_source = PARAM_SOURCE_STATIC
 					}}
 				},
@@ -374,39 +368,37 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_START_PUMP, .params.pump = {
-					.pump_id = 0,  // Статическое значение (заглушка), будет перезаписано динамическим параметром
+					.pump_id = DEV_PUMP_DYNAMIC,
 					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID
 					}},
-
 			{ .action = ACTION_WAIT_MS, .params.wait = {
-					.delay_ms = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
-					.delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS // Источник для pump_duration_ms
-
+					.delay_ms = 0,
+					.delay_ms_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS
 					}}
 				},
-				.num_actions = 2 // Насос запускается и ожидание происходит одновременно
+				.num_actions = 2
 			},
 
-		// Шаг 3: Остановка насоса
+		// Шаг 4: Остановка насоса.
 
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_STOP_PUMP, .params.pump = {
-					.pump_id = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
+					.pump_id = DEV_PUMP_DYNAMIC,
 					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID
 					}}
 				},
 				.num_actions = 1
 			},
 
-			 // Шаг 5: Подъем иглы (Z-ось)
+			 // Шаг 5: Подъем иглы (Z-ось дозатора).
 			{
 				.atomic_actions = (const AtomicAction_t[]){
 					{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-						.motor_id = 3, // ID мотора для оси Z дозатора (предположение)
+						.motor_id = DEV_DISPENSER_MOTOR_Z,
 						.motor_id_source = PARAM_SOURCE_STATIC,
-						.steps = 0, // Статическое значение (заглушка), будет перезаписано динамическим параметром
-						.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP, // Источник для steps_up
-						.speed = 200, // Статическая скорость
+						.steps = 0,
+						.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP,
+						.speed = 200,
 						.speed_source = PARAM_SOURCE_STATIC
 					}}
 				},
@@ -422,10 +414,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
  * Выполняется командой DISPENSER_DISPENSE (0x2200).
  */
  const ProcessStep_t g_recipe_dispenser_dispense[] = {
-		 // Шаг 1: Поворот дозатора к цели
+		 // Шаг 1: Поворот дозатора (X-Y ось) к цели.
 		 { .atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 5,
+					 .motor_id = DEV_DISPENSER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
 					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS,
@@ -436,10 +428,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			 .num_actions = 1
 		},
 
-		// Шаг 2: Опускание иглы (Z-ось)
+		// Шаг 2: Опускание иглы (Z-ось дозатора).
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					.motor_id = 3,
+					.motor_id = DEV_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
 					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN,
@@ -450,10 +442,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			.num_actions = 1
 		},
 
-		// Шаг 3: Запуск насоса для выдачи жидкости и ожидание
+		// Шаг 3: Запуск насоса для выдачи жидкости и ожидание.
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_START_PUMP, .params.pump = {
-					.pump_id = 0,
+					.pump_id = DEV_PUMP_DYNAMIC,
 					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID
 				}},
 			{ .action = ACTION_WAIT_MS, .params.wait = {
@@ -464,20 +456,20 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			.num_actions = 2
 		},
 
-		// Шаг 4: Остановка насоса
+		// Шаг 4: Остановка насоса.
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_STOP_PUMP, .params.pump = {
-					.pump_id = 0,
+					.pump_id = DEV_PUMP_DYNAMIC,
 					.pump_id_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID
 				}}
 			},
 		.num_actions = 1
 		},
 
-		// Шаг 5: Подъем иглы (Z-ось)
+		// Шаг 5: Подъем иглы (Z-ось дозатора).
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					.motor_id = 3,
+					.motor_id = DEV_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
 					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP,
@@ -498,14 +490,14 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
   * Выполняется командой REAGENT_ROTATE (0x5000). added 13/02/2026
   */
  const ProcessStep_t g_recipe_reagent_rotate[] = {
-		 // Шаг 1: Поворот мотора ротора реагентов
+		 // Шаг 1: Поворот диска реагентов/образцов.
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 6, // Предполагаемый ID мотора для ротора реагентов (проверить в app_config.h)
+					 .motor_id = DEV_REAGENT_SAMPLE_DISK_MOTOR,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
 					 .steps_source = PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS,
-					 .speed = 800, // Предполагаемая скорость (проверить или сделать параметром)
+					 .speed = 800,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
 			 },
@@ -520,39 +512,39 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
   * Выполняется командой MIXER_MIX (0x3100).
   */
  const ProcessStep_t g_recipe_mixer_mix[] = {
-		 // Шаг 1: Поворот миксера к кювете
+		 // Шаг 1: Поворот миксера (X-Y ось) к кювете.
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 8, // Предполагаемый ID мотора для миксера (проверить в app_config.h)
+					 .motor_id = DEV_MIXER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
 					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS,
-					 .speed = 1000, // Предполагаемая скорость
+					 .speed = 1000,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
 			 },
 			 .num_actions = 1
 		  },
 
-		 // Шаг 2: Опускание лопатки миксера
+		 // Шаг 2: Опускание лопатки миксера (Z-ось).
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 9, // ID мотора для подъема/опускания лопатки миксера
+					 .motor_id = DEV_MIXER_MOTOR_Z,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN, // Будет возвращено MIXER_Z_STEPS_DOWN
-					 .speed = 200, // Предполагаемая скорость
+					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN,
+					 .speed = 200,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
 			 },
 			 .num_actions = 1
 		    },
 
-			  // Шаг 3: Включение мотора перемешивания и ожидание длительности
+			  // Шаг 3: Включение мотора перемешивания (лопатка) и ожидание.
 			  {.atomic_actions = (const AtomicAction_t[]){
 				  { .action = ACTION_START_MIXING_MOTOR, .params.mixing_motor = {
-						  .mixer_id = 10, // ID мотора перемешивания (физический)
-						  .mixer_id_source = PARAM_SOURCE_STATIC // Logical mixer_id from command will map to this physical ID
+						  .mixer_id = DEV_MIXER_PADDLE_MOTOR,
+						  .mixer_id_source = PARAM_SOURCE_STATIC
 				  }},
 				  { .action = ACTION_WAIT_MS, .params.wait = {
 						  .delay_ms = 0,
@@ -562,36 +554,36 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			  .num_actions = 2
 			},
 
-			// Шаг 4: Выключение мотора перемешивания
+			// Шаг 4: Выключение мотора перемешивания (лопатка).
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_STOP_MIXING_MOTOR, .params.mixing_motor = {
-						.mixer_id = 10, // ID мотора перемешивания (физический)
+						.mixer_id = DEV_MIXER_PADDLE_MOTOR,
 						.mixer_id_source = PARAM_SOURCE_STATIC
 				}}
 			},
 			.num_actions = 1
 			},
 
-			// Шаг 5: Подъем лопатки миксера
+			// Шаг 5: Подъем лопатки миксера (Z-ось).
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-						.motor_id = 9, // ID мотора для подъема/опускания лопатки миксера
+						.motor_id = DEV_MIXER_MOTOR_Z,
 						.motor_id_source = PARAM_SOURCE_STATIC,
 						.steps = 0,
-						.steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP, // Будет возвращено MIXER_Z_STEPS_UP
-						.speed = 200, // Предполагаемая скорость
+						.steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP,
+						.speed = 200,
 						.speed_source = PARAM_SOURCE_STATIC
 				}}
 			},
 			.num_actions = 1
 			},
 
-			// Шаг 6: Возврат миксера в исходное положение (X-Y)
+			// Шаг 6: Возврат миксера (X-Y ось) в исходное положение.
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_HOME_MOTOR, .params.home_motor = {
-						.motor_id = 8, // ID мотора для поворота миксера по X-Y
+						.motor_id = DEV_MIXER_MOTOR_XY,
 						.motor_id_source = PARAM_SOURCE_STATIC,
-						.speed = 400, // Скорость хоминга
+						.speed = 400,
 						.speed_source = PARAM_SOURCE_STATIC
 				}}
 			},
@@ -608,10 +600,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
   * Выполняется командой PHOTOMETER_SCAN_SINGLE (0x6100).
   */
  const ProcessStep_t g_recipe_photometer_scan_single[] = {
-		 // Шаг 1: Поворот реакционного диска для позиционирования кюветы
+		 // Шаг 1: Поворот реакционного диска для позиционирования кюветы.
 		 {.atomic_actions = (const AtomicAction_t[]){
 			 { .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
-					 .motor_id = 3, // ID мотора реакционного диска (предположение)
+					 .motor_id = DEV_REACTION_DISK_MOTOR,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
 					 .steps_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS,
@@ -622,10 +614,10 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			 .num_actions = 1
 			 },
 
-		// Шаг 2: Выполнение сканирования
+		// Шаг 2: Выполнение сканирования.
 		{.atomic_actions = (const AtomicAction_t[]){
 			{ .action = ACTION_PERFORM_SCAN, .params.perform_scan = {
-					.photometer_id = 1, // ID фотометра (статический)
+					.photometer_id = DEV_PHOTOMETER_MAIN,
 					.photometer_id_source = PARAM_SOURCE_STATIC,
 					.wavelength_mask = 0, // Будет заменено динамическим параметром
 					.wavelength_mask_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK

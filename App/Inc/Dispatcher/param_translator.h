@@ -39,9 +39,7 @@
 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентов
 
 // Константы для трансляции параметров миксера (заглушки)
-//#define MIXER_ROT_MOTOR_ID           8     // ID мотора для поворота миксера по X-Y
-//#define MIXER_Z_MOTOR_ID             9     // ID мотора для подъема/опускания лопатки миксера по Z
-//#define MIXER_MIXING_MOTOR_ID        10    // ID мотора для перемешивания (вкл/выкл)
+// Примечание: ID моторов миксера определены в device_mapping.h (DEV_MIXER_MOTOR_XY, DEV_MIXER_MOTOR_Z, DEV_MIXER_PADDLE_MOTOR)
 
 #define MIXER_Z_STEPS_UP             -200   // Шагов для опускания лопатки миксера
 #define MIXER_Z_STEPS_DOWN           200  // Шагов для подъема лопатки миксера
