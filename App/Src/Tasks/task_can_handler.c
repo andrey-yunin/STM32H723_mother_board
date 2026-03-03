@@ -11,6 +11,7 @@
 #include "shared_resources.h"   // Для extern объявлений очередей
 #include "can_message.h"        // Для нашей структуры CanMessage_t
 #include "command_protocol.h"   // Для перечисления CommandID_t
+#include "Dispatcher/can_packer.h"
 
 // --- Внешние переменные ---
 // Объявлены в main.c, здесь мы сообщаем компилятору, что будем их использовать.
@@ -163,21 +164,40 @@ void app_start_task_can_handler(void *argument)
 	// --- 3. Основной цикл задачи ---
 	// Этот цикл будет вечно работать, обрабатывая исходящие CAN-сообщения.
 
-	CanMessage_t tx_msg; // Переменная для хранения сообщения, извлеченного из очереди.
+	CAN_Message_t tx_msg;  // Абстрактное CAN-сообщение из очереди
 
 	for(;;)
 		{
-		// Ждем, пока в очереди can_tx_queue_handle не появится сообщение.
-		// portMAX_DELAY заставляет задачу "спать", пока очередь пуста, не тратя ресурсы процессора.
 		if(xQueueReceive(can_tx_queue_handle, &tx_msg, portMAX_DELAY) == pdPASS)
 			{
-			// Как только мы получили сообщение из очереди, отправляем его в шину.
-			// HAL_FDCAN_AddMessageToTxFifoQ - стандартная функция HAL для постановки кадра в очередь на отправку.
-			if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &tx_msg.Header, tx_msg.Data) != HAL_OK)
-				{
-				// Если отправка не удалась, здесь можно добавить логику обработки ошибок.
-				// Например, моргнуть светодиодом ошибки или отправить лог.
-				}
-			}
+			// Конвертация CAN_Message_t → HAL FDCAN формат
+			FDCAN_TxHeaderTypeDef hal_header;
+			hal_header.Identifier = tx_msg.id;
+			hal_header.IdType = tx_msg.is_extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+	        hal_header.TxFrameType = FDCAN_DATA_FRAME;
+	        hal_header.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+	        hal_header.BitRateSwitch = FDCAN_BRS_OFF;
+	        hal_header.FDFormat = FDCAN_CLASSIC_CAN;
+	        hal_header.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+	        hal_header.MessageMarker = 0;
+
+	        // Преобразование DLC: число байт → константа HAL
+	        switch (tx_msg.dlc) {
+	        		case 0: hal_header.DataLength = FDCAN_DLC_BYTES_0; break;
+	                case 1: hal_header.DataLength = FDCAN_DLC_BYTES_1; break;
+	                case 2: hal_header.DataLength = FDCAN_DLC_BYTES_2; break;
+	                case 3: hal_header.DataLength = FDCAN_DLC_BYTES_3; break;
+	                case 4: hal_header.DataLength = FDCAN_DLC_BYTES_4; break;
+	                case 5: hal_header.DataLength = FDCAN_DLC_BYTES_5; break;
+	                case 6: hal_header.DataLength = FDCAN_DLC_BYTES_6; break;
+	                case 7: hal_header.DataLength = FDCAN_DLC_BYTES_7; break;
+	                default: hal_header.DataLength = FDCAN_DLC_BYTES_8; break;
+	                }
+
+	        if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &hal_header, tx_msg.data) != HAL_OK)
+	        	{
+	        	// TODO: обработка ошибки отправки
+	        	}
+	        }
 		}
 }

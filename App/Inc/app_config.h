@@ -17,7 +17,11 @@
 
 #define APP_USB_CMD_MAX_LEN            256  // Максимальная длина строки команды от ПК (включая null-терминатор)
 #define APP_USB_RESP_MAX_LEN           256  // Максимальная длина строки ответа на ПК (включая null-терминатор)
-#define APP_CAN_MESSAGE_MAX_LEN         8   // Максимальная длина полезной нагрузки CAN-сообщения (8 байт)
+
+
+//added 03/03/2026 APP_CAN_MESSAGE_MAX_LEN удалён — размер элемента CAN-очередей
+// определяется через sizeof(CAN_Message_t) в main.c
+// #define APP_CAN_MESSAGE_MAX_LEN         8   // Максимальная длина полезной нагрузки CAN-сообщения (8 байт)
 #define APP_LOG_MESSAGE_MAX_LEN        128  // Максимальная длина сообщения для Логгера (включая null-терминатор)
 
 // --- Job Manager Configuration ---

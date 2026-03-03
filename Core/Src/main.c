@@ -30,6 +30,7 @@
 #include "task_watchdog.h"
 #include "task_jobs_monitor.h"
 #include "task_logger.h"
+#include "Dispatcher/can_packer.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
@@ -201,10 +202,14 @@ int main(void)
 
 
 // Для CAN передаются структурированные сообщения.
-// Пока что представим, что это будет 8-байтный массив (payload CAN-сообщения).
-// Позже мы определим структуру CanMessage_t.
-  can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
-  can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, APP_CAN_MESSAGE_MAX_LEN); // 20 CAN-сообщений
+// changed 03/03/2026
+// Элемент очереди — абстрактный CAN_Message_t (can_packer.h).
+// task_can_handler конвертирует в HAL-формат перед отправкой.
+can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, sizeof(CAN_Message_t));
+can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, sizeof(CAN_Message_t));
+
+
+
 
   //log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
 

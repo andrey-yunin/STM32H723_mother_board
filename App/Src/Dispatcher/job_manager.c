@@ -349,22 +349,25 @@ static void JobManager_ExecuteStep(JobContext_t* job)
         
         bool should_execute = true;
 
-        // Determine effective parameters for ACTION_HOME_MOTOR
-        // These will be used for both filtering and dispatching the command
-        uint8_t effective_home_motor_id = JobManager_GetUint8Param(job, action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
-        uint16_t effective_home_motor_speed = JobManager_GetUint16Param(job, action->params.home_motor.speed_source, action->params.home_motor.speed);
+        // Параметры HOME_MOTOR — вычисляем только для нужного типа действия
+        uint8_t effective_home_motor_id = 0;
+        uint16_t effective_home_motor_speed = 0;
 
-        if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM && action->action == ACTION_HOME_MOTOR)
-        	{
-        	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED)
-        		{
-        		uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
-        		// Use the effective_home_motor_id for filtering
-        		if (effective_home_motor_id > 0)
-        			{
-        			uint8_t motor_bit = 1 << (effective_home_motor_id - 1);
-        			if (!(modules_mask & motor_bit)) {
-        				should_execute = false;
+        if (action->action == ACTION_HOME_MOTOR) {
+        	effective_home_motor_id = JobManager_GetUint8Param(job,
+        			action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
+        	effective_home_motor_speed = JobManager_GetUint16Param(job,
+        			action->params.home_motor.speed_source, action->params.home_motor.speed);
+
+        	// Фильтрация по маске — только для рецепта INIT
+        	if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM) {
+        		if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+        			uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
+        			if (effective_home_motor_id > 0) {
+        				uint8_t motor_bit = 1 << (effective_home_motor_id - 1);
+        				if (!(modules_mask & motor_bit)) {
+        					should_execute = false;
+        					}
         				}
         			}
         		}
@@ -461,6 +464,11 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	// TODO: Packer_CreateStartMixingMotorMsg(effective_start_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
             	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	// Обоснование: мотор перемешивания = непрерывное вращение → MOTOR_START_CONTINUOUS (0x0103).
+            	// added 03.03.2026 создаем необходимую функцию:
+            	// Скорость 0 — заглушка, потом параметризуем.
+            	Packer_CreateStartContinuousMotorMsg(effective_start_mixing_motor_id, 0, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
             	job->pending_actions_count--; // Имитация ответа
             	break;
 
@@ -471,6 +479,9 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	// TODO: Packer_CreateStopMixingMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
             	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	// added 03.03.2026 создаем необходимую функцию:
+            	Packer_CreateStopMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
             	job->pending_actions_count--; // Имитация ответа
             	break;
 
@@ -482,6 +493,9 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	// TODO: Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
             	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	// added 03.03.2026 создаем необходимую функцию:
+            	Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
             	job->pending_actions_count--; // Simulate response
             	break;
 

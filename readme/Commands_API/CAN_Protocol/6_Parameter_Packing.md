@@ -33,7 +33,7 @@ This is a high-frequency, critical command for which we must optimize packing.
 | `0-1`   | Command Code    | `UINT16`| `0x0101`        | Identifies the `MOTOR_ROTATE` action.              |
 | `2`     | `motor_id`      | `UINT8` | `0x00`          | A single byte is sufficient (up to 256 motors per node). |
 | `3-6`   | `steps`         | `INT32` | `-500`          | A 32-bit signed integer is required for precision and direction. Stored little-endian. |
-| `7`     | `speed`         | `UINT8` | `0x0A`          | A single byte allows for 256 different speed profiles. |
+| `7`     | `speed`         | `UINT8` | `0x0A`          | Packed as `real_speed / 4` (shift >>2). Range 0–1020, step 4. Executor unpacks: `speed << 2`. |
 
 *   **Efficiency Analysis**: This structure uses all 8 bytes of the CAN payload. It is tightly packed with no wasted space within the defined payload for this command. Using `INT32` for steps is crucial for sufficient range, even if it uses 4 bytes.
 
