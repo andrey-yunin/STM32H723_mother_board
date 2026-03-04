@@ -53,9 +53,8 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		 uint8_t received_dispenser_id = raw_params[0];
     		 uint16_t received_volume = read_uint16_from_buffer(&raw_params[1]);
     		 uint16_t received_cycles = raw_params[3];
-
     		 cmd->args.dispenser_wash.dispenser_id = received_dispenser_id;
-    		 cmd->args.dispenser_wash.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
+    		 cmd->args.dispenser_wash.syringe_steps = -ParamTranslator_VolumeToSyringeSteps(received_volume); // Отрицательные — диспенсирование added 04/03/2026
     		 cmd->args.dispenser_wash.cycles = received_cycles;
              // NEW: Call the dedicated wash-specific translator functions
              cmd->args.dispenser_wash.rotate_steps = ParamTranslator_DispenserWashRotateSteps();
@@ -107,7 +106,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		cmd->args.dispenser_aspirate.rotate_steps = ParamTranslator_DispenserSlotToRotateSteps(received_source_type, received_position);
     		cmd->args.dispenser_aspirate.steps_down = ParamTranslator_DispenserZToStepsDown(received_source_type, received_position);
     		cmd->args.dispenser_aspirate.steps_up = ParamTranslator_DispenserZToStepsUp(received_source_type, received_position);
-    		cmd->args.dispenser_aspirate.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
+    		cmd->args.dispenser_aspirate.syringe_steps = ParamTranslator_VolumeToSyringeSteps(received_volume); // Положительные — аспирация added 04/03/2026
 
     		cmd->args_type = ARGS_TYPE_PARSED;
     		}
@@ -130,7 +129,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		cmd->args.dispenser_dispense.rotate_steps = ParamTranslator_DispenserTargetToRotateSteps(received_target_type, received_position);
     		cmd->args.dispenser_dispense.steps_down = ParamTranslator_DispenserTargetZToStepsDown(received_target_type, received_position);
     		cmd->args.dispenser_dispense.steps_up = ParamTranslator_DispenserTargetZToStepsUp(received_target_type, received_position);
-    		cmd->args.dispenser_dispense.pump_duration_ms = ParamTranslator_VolumeToPumpDurationMs(received_dispenser_id, received_volume);
+    		cmd->args.dispenser_dispense.syringe_steps = -ParamTranslator_VolumeToSyringeSteps(received_volume); // Отрицательные — диспенсирование added 04/03/2026
 
     		cmd->args_type = ARGS_TYPE_PARSED;
     		}

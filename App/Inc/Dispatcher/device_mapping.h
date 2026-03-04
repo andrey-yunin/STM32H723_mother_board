@@ -46,10 +46,6 @@
 // --- Специальное значение ---
 #define DEV_PUMP_DYNAMIC             0   // Заглушка, заменяется в runtime из параметров команды
 
-// --- Дозатор (временная совместимость) ---
-#define DEV_DISPENSER_PUMP           1   // Временно! Физически это DEV_DISPENSER_MOTOR_SYRINGE (Motor ID=3).
-                                         // Замена ACTION_START_PUMP -> ACTION_ROTATE_MOTOR будет отдельной задачей.
-
 // --- Станция промывки (Wash Station), диапазон 10-19 ---
 #define DEV_WASH_PUMP_FILL           10  // Насос заполнения
 #define DEV_WASH_PUMP_DRAIN          11  // Насос слива

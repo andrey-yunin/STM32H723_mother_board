@@ -55,6 +55,12 @@
 #define DISPENSER_Z_STEPS_UP_WASH_STATION    -500 // Шаги для подъема иглы на промывочной станции (Z)
 
 
+#define WASH_PUMP_MS_PER_UL          10     // мс работы насоса промывочной станции на 1 микролитр
+#define SYRINGE_STEPS_PER_UL         10     // шагов шприцевого мотора на 1 микролитр (калибровочная заглушка)
+#define SYRINGE_DEFAULT_SPEED        200    // скорость шприцевого мотора по умолчанию (шагов/сек)
+
+
+
 // --- Translation Function Declarations ---
 
 /**
@@ -66,16 +72,6 @@
                    Returns 0 if cuvette_number is 0 or invalid (e.g., > PT_REACTION_DISK_MAX_CUVETTE).
  */
 int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
-
-/**
- * @brief Translates a volume in microliters to a pump activation duration in milliseconds.
- *        This function would typically select a flow rate based on the pump_id.
- * @param volume_ul The volume to dispense/aspirate in microliters.
- * @param pump_id The ID of the pump (allows for pump-specific flow rates).
- * @return uint32_t The duration in milliseconds for the pump to operate.
- *                  Returns 0 if volume_ul is 0 or calculation is impossible (e.g., zero flow rate).
- */
-//uint32_t ParamTranslator_VolumeToPumpDurationMs(uint16_t volume_ul, uint8_t pump_id);
 
 
 /**
@@ -113,13 +109,18 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
   int32_t ParamTranslator_DispenserZToStepsUp(uint8_t source_type, uint16_t position);
 
 
-  /**
-   * @brief Преобразует объем жидкости в длительность работы насоса в миллисекундах.
-   *
-   * @param dispenser_id ID дозатора (может влиять на калибровку насоса).
-   * @param volume Объем в микролитрах.
-   * @return uint32_t Длительность работы насоса в мс.   */
-  uint32_t ParamTranslator_VolumeToPumpDurationMs(uint8_t dispenser_id, uint16_t volume);
+
+ /**
+  * @brief Преобразует объём жидкости в шаги шприцевого мотора.
+  *        Возвращает положительное значение. Знак (аспирация/диспенсирование)
+  *        определяется вызывающим кодом.
+  *
+  * @param volume Объём в микролитрах.
+  * @return int32_t Количество шагов шприцевого мотора (всегда >= 0).
+  */
+  int32_t ParamTranslator_VolumeToSyringeSteps(uint16_t volume);
+
+
 
 
  /**

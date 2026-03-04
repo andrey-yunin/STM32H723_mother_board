@@ -566,3 +566,26 @@ R`. Параметр `cycles` обрабатывается `JobManager`'ом д�
 
 *   [x] **10.1. [Рефакторинг]** Удалены дубли `MAX_CONCURRENT_JOBS` и `JOB_TIMEOUT_MS` из `job_manager.h`. Единственное определение — в `app_config.h`. Значение `MAX_CONCURRENT_JOBS` исправлено с 5 на 1 (параллельные задачи требуют сопоставления DONE→Job, которое не реализовано).
 *   [x] **10.2. [Тестирование]** Полный цикл анализа (`test_main_processes.py`) пройден.
+
+---
+
+## 11. Фаза 11: Шприцевой мотор дозатора — переход с pump на motor
+
+**Дата:** 04 марта 2026 г. | **Статус:** Завершена
+
+**Контекст:** Шприцевой мотор дозатора (DEV_DISPENSER_MOTOR_SYRINGE, ID=3) управлялся как насос через ACTION_START_PUMP / ACTION_STOP_PUMP. Физически это шаговый двигатель — заменено на ACTION_ROTATE_MOTOR с точным позиционированием (объём → шаги).
+
+**Ключевые решения:**
+- Положительные шаги = аспирация (втягивание), отрицательные = диспенсирование (выталкивание)
+- Рецепты упрощены: 2 шага (START_PUMP+WAIT_MS и STOP_PUMP) → 1 шаг (ROTATE_MOTOR)
+- Калибровка: `SYRINGE_STEPS_PER_UL = 10`, `SYRINGE_DEFAULT_SPEED = 200` (заглушки)
+- Насосы промывочной станции (DEV_WASH_PUMP_FILL/DRAIN) не затронуты — остаются на START/STOP_PUMP
+
+*   [x] **11.1. [Реализация]** Новая функция `ParamTranslator_VolumeToSyringeSteps()` заменила `VolumeToPumpDurationMs()`. Добавлены константы `SYRINGE_STEPS_PER_UL`, `SYRINGE_DEFAULT_SPEED`. Константа `PUMP_MS_PER_UL` переименована в `WASH_PUMP_MS_PER_UL`.
+*   [x] **11.2. [Рефакторинг]** В `command_parser.h`: `pump_duration_ms` → `syringe_steps` (int32_t) в трёх структурах ParsedArgs (DispenserWash, DispenserAspirate, DispenserDispense).
+*   [x] **11.3. [Рефакторинг]** В `recipe_store.h`: переименованы 3 значения ParamSource enum (*_PUMP_DURATION_MS → *_SYRINGE_STEPS).
+*   [x] **11.4. [Рефакторинг]** В `parameter_parser.c`: вызов `VolumeToSyringeSteps()` со знаком (- для wash/dispense, + для aspirate).
+*   [x] **11.5. [Рефакторинг]** В `recipe_store.c`: 4 рецепта обновлены (WASH 6→5 шагов, ASPIRATE 5→4, DISPENSE 5→4, aspirate_reagent 6→5). START_PUMP+WAIT_MS+STOP_PUMP → ROTATE_MOTOR(SYRINGE).
+*   [x] **11.6. [Рефакторинг]** В `job_manager.c`: +3 case в GetInt32Param (SYRINGE_STEPS), -3 case в GetUint32Param (PUMP_DURATION_MS).
+*   [x] **11.7. [Очистка]** Удалён `DEV_DISPENSER_PUMP` из `device_mapping.h`. Удалён мёртвый код из `param_translator.c/h`.
+*   [x] **11.8. [Тестирование]** Все тесты пройдены (`test_main_processes.py`). Шприц: ID:3, Steps корректны (volume × 10, знак по направлению). Wash station pumps (ID:10, 11) не затронуты.

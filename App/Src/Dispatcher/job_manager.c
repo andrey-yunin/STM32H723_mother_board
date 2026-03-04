@@ -237,6 +237,14 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 		case PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS: // added 17/02/2026 New for WASH_STATION_FILL
 			return job->initial_cmd.args.wash_station_fill.rotate_steps;
 
+		case PARAM_SOURCE_CMD_DISPENSER_WASH_SYRINGE_STEPS: //added 04.03/2026
+			return job->initial_cmd.args.dispenser_wash.syringe_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SYRINGE_STEPS: //added 04.03/2026
+			return job->initial_cmd.args.dispenser_aspirate.syringe_steps;
+
+		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_SYRINGE_STEPS: //added 04.03/2026
+			return job->initial_cmd.args.dispenser_dispense.syringe_steps;
 
 		default:
 			break;
@@ -252,23 +260,8 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 			// case PARAM_SOURCE_CMD_DISPENSER_VOLUME: // This old source is removed
 				// return job->initial_cmd.args.dispenser_wash.volume;
 
-
-			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_PUMP_DURATION_MS: // added 12/02/2026
-				return job->initial_cmd.args.dispenser_aspirate.pump_duration_ms;
-
-			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_PUMP_DURATION_MS: // added 13/02/2026
-				return job->initial_cmd.args.dispenser_dispense.pump_duration_ms;
-
-			case PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS: // <-- added 16/02/2026
-				return job->initial_cmd.args.mixer_mix.duration_ms;
-
-			case PARAM_SOURCE_CMD_DISPENSER_WASH_PUMP_DURATION_MS: // <-- NEW: Pump duration for DISPENSER_WASH
-				return job->initial_cmd.args.dispenser_wash.pump_duration_ms;
-
 			case PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS: // added 17/02/2026 New for WASH_STATION_FILL
 				return job->initial_cmd.args.wash_station_fill.pump_duration_ms;
-
-
 
 				// Add other uint32_t sources here as needed
 				// For example:
