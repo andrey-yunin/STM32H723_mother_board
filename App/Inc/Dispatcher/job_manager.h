@@ -14,10 +14,6 @@
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/recipe_store.h"
 
-// --- Константы ---
-#define MAX_CONCURRENT_JOBS     1
-#define JOB_TIMEOUT_MS          5000
-
 // --- Типы данных ---
 
 typedef enum {

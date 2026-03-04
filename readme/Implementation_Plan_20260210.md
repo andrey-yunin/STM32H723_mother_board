@@ -557,3 +557,12 @@ R`. Параметр `cycles` обрабатывается `JobManager`'ом д�
 *   [x] **9.1. [Реализация]** Заменён `osSemaphoreAcquire(usb_tx_semHandle, osWaitForever)` на таймаут 1 сек. При таймауте — принудительный `osSemaphoreRelease` и пропуск пакета (`continue`).
 *   [x] **9.2. [Реализация]** Добавлен лимит 200 попыток для цикла `CDC_Transmit_HS(USBD_BUSY)`. При исчерпании — пропуск пакета (`break`).
 *   [x] **9.3. [Тестирование]** Полный цикл анализа (`test_main_processes.py`) пройден: 12 команд включая INIT, GET_STATUS, ASPIRATE, DISPENSE, MIXER_MIX, PHOTOMETER_SCAN, WASH_STATION.
+
+---
+
+## 10. Фаза 10: Унификация констант конфигурации
+
+**Дата:** 04 марта 2026 г. | **Статус:** Завершена
+
+*   [x] **10.1. [Рефакторинг]** Удалены дубли `MAX_CONCURRENT_JOBS` и `JOB_TIMEOUT_MS` из `job_manager.h`. Единственное определение — в `app_config.h`. Значение `MAX_CONCURRENT_JOBS` исправлено с 5 на 1 (параллельные задачи требуют сопоставления DONE→Job, которое не реализовано).
+*   [x] **10.2. [Тестирование]** Полный цикл анализа (`test_main_processes.py`) пройден.

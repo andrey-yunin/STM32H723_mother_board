@@ -25,8 +25,9 @@
 #define APP_LOG_MESSAGE_MAX_LEN        128  // Максимальная длина сообщения для Логгера (включая null-терминатор)
 
 // --- Job Manager Configuration ---
-#define APP_MAX_ACTIVE_JOBS            5    // Максимальное количество одновременно активных "проектов"
-#define APP_JOB_TIMEOUT_MS             5000 // Тайм-аут для шага "проекта" в миллисекундах (5 секунд)
+#define MAX_CONCURRENT_JOBS            1    // Макс. одновременных задач (Job). Увеличить после реализации сопоставления DONE→Job.
+#define JOB_TIMEOUT_MS                 5000 // Тайм-аут для шага задачи в миллисекундах
+
 
 // Максимальный размер бинарных параметров для одной команды
 #define MAX_BINARY_ARGS_SIZE 64
