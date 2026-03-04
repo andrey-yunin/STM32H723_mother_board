@@ -299,7 +299,7 @@ def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: 
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:3"
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -339,7 +339,7 @@ def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, v
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:3"
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")

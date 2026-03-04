@@ -12,7 +12,8 @@
 #include "can_message.h"        // Для нашей структуры CanMessage_t
 #include "command_protocol.h"   // Для перечисления CommandID_t
 #include "Dispatcher/can_packer.h"
- #include "Dispatcher/executor_simulator.h"
+#include "Dispatcher/executor_simulator.h"
+#include "task_watchdog.h"
 
 
 // --- Внешние переменные ---
@@ -182,7 +183,8 @@ void app_start_task_can_handler(void *argument)
 
 	for(;;)
 		{
-		if(xQueueReceive(can_tx_queue_handle, &tx_msg, portMAX_DELAY) == pdPASS)
+		Watchdog_Kick(TASK_ID_CAN_HANDLER);
+		if(xQueueReceive(can_tx_queue_handle, &tx_msg, pdMS_TO_TICKS(1000)) == pdPASS)
 			{
 
 			// Конвертация CAN_Message_t → HAL FDCAN формат

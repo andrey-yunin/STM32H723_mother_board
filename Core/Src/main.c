@@ -211,7 +211,7 @@ can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, sizeof(CAN_Message_t
 
 
 
-  //log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , APP_LOG_MESSAGE_MAX_LEN); // 30 сообщений для лога, каждое до 128 байт
+log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , sizeof(USB_TxPacket_t)); // 30 сообщений для лога, каждое до 128 байт
 
 // Важно: всегда проверяйте, что очереди успешно создались!
 // Если какая-либо очередь не создалась (handle == NULL),

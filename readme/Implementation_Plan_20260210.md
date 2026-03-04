@@ -589,3 +589,86 @@ R`. Параметр `cycles` обрабатывается `JobManager`'ом д�
 *   [x] **11.6. [Рефакторинг]** В `job_manager.c`: +3 case в GetInt32Param (SYRINGE_STEPS), -3 case в GetUint32Param (PUMP_DURATION_MS).
 *   [x] **11.7. [Очистка]** Удалён `DEV_DISPENSER_PUMP` из `device_mapping.h`. Удалён мёртвый код из `param_translator.c/h`.
 *   [x] **11.8. [Тестирование]** Все тесты пройдены (`test_main_processes.py`). Шприц: ID:3, Steps корректны (volume × 10, знак по направлению). Wash station pumps (ID:10, 11) не затронуты.
+
+## 12. Фаза 12: Watchdog + Logger — мониторинг живучести задач и централизованное логирование
+
+**Дата начала:** 04 марта 2026 г. | **Дата завершения:** 04 марта 2026 г. | **Статус:** Завершена
+
+### Контекст
+
+**Проблема 1 (Watchdog):** Задача `task_watchdog` — пустой бесконечный цикл без `osDelay()` (busy-loop, съедает CPU). Нет мониторинга живучести FreeRTOS-задач. Если какая-либо задача зависнет (deadlock, переполнение стека), система не обнаружит проблему и не восстановится.
+
+**Проблема 2 (Logger):** Задача `task_logger` — закомментирована. Очередь `log_queue` создана, но не используется. Все логи отправляются напрямую через `Dispatcher_SendUsbResponse()` → `usb_tx_queue`. Нет централизованного канала для системных сообщений (watchdog, диагностика).
+
+**Решение:** Реализовать обе задачи совместно — watchdog обнаруживает проблемы, logger предоставляет канал для их вывода.
+
+### Механизм heartbeat
+
+- Глобальный массив `volatile uint32_t task_heartbeats[TASK_COUNT]`
+- Каждая задача в своём главном цикле: `task_heartbeats[MY_ID]++`
+- Watchdog раз в 1 сек: сравнивает текущие значения со снимком
+  - Все изменились → система здорова → (в будущем: сбрасывать IWDG)
+  - Какой-то не изменился → задача зависла → отправить WARNING в log_queue
+
+### Особенность: задачи с portMAX_DELAY
+
+3 задачи блокируются на очередях бесконечно:
+- `task_can_handler`: `xQueueReceive(can_tx_queue, ..., portMAX_DELAY)`
+- `task_usb_handler`: `xQueueReceive(usb_tx_queue, ..., portMAX_DELAY)`
+- `task_dispatcher`: `xStreamBufferReceive(..., portMAX_DELAY)`
+
+**Решение:** заменить `portMAX_DELAY` на таймаут 1000 мс. При таймауте задача просыпается, инкрементирует heartbeat и снова ждёт. Данные не теряются.
+
+### Затрагиваемые файлы (6 шт)
+
+| Файл | Действие |
+|------|----------|
+| `App/Inc/Tasks/task_watchdog.h` | ИЗМЕНИТЬ — добавить ID задач, heartbeat API |
+| `App/Src/Tasks/task_watchdog.c` | ИЗМЕНИТЬ — реализовать логику мониторинга |
+| `App/Src/Tasks/task_logger.c` | ИЗМЕНИТЬ — раскомментировать и активировать |
+| `App/Src/Tasks/task_usb_handler.c` | ИЗМЕНИТЬ — portMAX_DELAY → таймаут + heartbeat |
+| `App/Src/Tasks/task_can_handler.c` | ИЗМЕНИТЬ — portMAX_DELAY → таймаут + heartbeat |
+| `App/Src/Tasks/task_dispatcher.c` | ИЗМЕНИТЬ — portMAX_DELAY → таймаут + heartbeat |
+
+Также: `task_jobs_monitor.c` — добавить heartbeat (уже имеет osDelay(100), замена не нужна).
+
+### План реализации
+
+**Этап 1. Определение heartbeat API (task_watchdog.h)**
+- Enum/defines для ID задач: `TASK_ID_CAN_HANDLER=0`, `TASK_ID_USB_HANDLER=1`, ..., `TASK_ID_LOGGER=5`
+- `#define TASK_COUNT 6`
+- `extern volatile uint32_t task_heartbeats[TASK_COUNT]`
+- Inline-функция или макрос: `Watchdog_Kick(task_id)` → `task_heartbeats[task_id]++`
+- Константа `WATCHDOG_CHECK_INTERVAL_MS 1000` — период проверки
+
+**Этап 2. Активация task_logger**
+- Раскомментировать код в `task_logger.c`
+- Логика: `xQueueReceive(log_queue, buf, 1000ms)` → при получении → `xQueueSend(usb_tx_queue, ...)`
+- Таймаут 1000 мс вместо portMAX_DELAY (для heartbeat)
+- Добавить `Watchdog_Kick(TASK_ID_LOGGER)` в начало цикла
+
+**Этап 3. Реализация task_watchdog**
+- Массив `volatile uint32_t task_heartbeats[TASK_COUNT]` (определение)
+- Массив `static uint32_t prev_heartbeats[TASK_COUNT]` (снимок)
+- Цикл: `osDelay(WATCHDOG_CHECK_INTERVAL_MS)`
+- Проверка: для каждой задачи сравнить `task_heartbeats[i] != prev_heartbeats[i]`
+- Если задача зависла → отправить WARNING в `log_queue` с именем задачи
+- Обновить снимок
+- Watchdog НЕ инкрементирует свой heartbeat (он сам — контролёр)
+
+**Этап 4. Добавление heartbeat в существующие задачи**
+- `task_can_handler.c`: заменить `portMAX_DELAY` → `pdMS_TO_TICKS(1000)`, добавить `Watchdog_Kick(TASK_ID_CAN_HANDLER)` в начало цикла
+- `task_usb_handler.c`: заменить `portMAX_DELAY` → `pdMS_TO_TICKS(1000)`, добавить `Watchdog_Kick(TASK_ID_USB_HANDLER)` в начало цикла
+- `task_dispatcher.c`: заменить `portMAX_DELAY` → `pdMS_TO_TICKS(1000)`, добавить `Watchdog_Kick(TASK_ID_DISPATCHER)` в начало цикла
+- `task_jobs_monitor.c`: добавить `Watchdog_Kick(TASK_ID_JOBS_MONITOR)` в начало цикла (osDelay(100) уже есть)
+
+**Этап 5. Тестирование**
+- Компиляция без ошибок
+- Запуск `test_main_processes.py` и `test_combined_commands.py`
+- Проверить наличие heartbeat-логов (watchdog не должен выдавать WARNING при нормальной работе)
+
+**Этап 6 (будущее, не в этой фазе). Аппаратный IWDG**
+- Включить IWDG в CubeMX
+- Раскомментировать `HAL_IWDG_MODULE_ENABLED` в `stm32h7xx_hal_conf.h`
+- В watchdog task: если все задачи живы → `HAL_IWDG_Refresh()`
+- Если хоть одна зависла → не обновлять → аппаратный сброс MCU через ~1 сек

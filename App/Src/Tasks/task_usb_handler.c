@@ -14,6 +14,7 @@
 #include "string.h"      // Для strlen
 #include "usb_device.h"
 #include "main.h"
+#include "task_watchdog.h"
 
 void app_start_task_usb_handler(void *argument)
 {
@@ -25,7 +26,8 @@ void app_start_task_usb_handler(void *argument)
 	for(;;)
 		{
 		// 1. Ждем пакет из очереди на отправку
-		if (xQueueReceive(usb_tx_queue_handle, &received_packet, portMAX_DELAY) == pdPASS)
+		Watchdog_Kick(TASK_ID_USB_HANDLER);
+		if (xQueueReceive(usb_tx_queue_handle, &received_packet, pdMS_TO_TICKS(1000)) == pdPASS)
 			{
 			// 2.  Ждём освобождения USB TX с таймаутом.
 			// Если callback CDC_TransmitCplt_HS не сработал за 1 сек —

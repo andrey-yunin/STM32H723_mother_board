@@ -6,7 +6,7 @@ import threading
 import queue
 
 # --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM2' 
+SERIAL_PORT = '/dev/ttyACM1' 
 BAUD_RATE = 9600
 RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
 LISTEN_DURATION = 5   # Продолжительность прослушивания асинхронных сообщений (секунды)
@@ -244,7 +244,7 @@ def wait_for_data_and_done(command_code: int, expected_data_len: int, expected_d
                         done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
                         if done_status == expected_done_status:
                             done_received = True
-                            print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Raw: {{msg['content']['raw_packet'].hex(' ')}}")
+                            print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Raw: {msg['content']['raw_packet'].hex(' ')}")
                         else:
                             print(f"ERROR: Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}, ожидался 0x{expected_done_status:04x}.")
                             return False, None
@@ -468,7 +468,7 @@ def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: 
         return False
 
     # Ожидаем DONE, параллельно собирая логи для проверки
-    expected_log_part = f"Sent START_PUMP (ID:{disp_id})"
+    expected_log_part = f"Sent ROTATE_MOTOR (ID:3"
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")

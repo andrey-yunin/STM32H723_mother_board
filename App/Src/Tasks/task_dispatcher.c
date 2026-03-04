@@ -13,6 +13,7 @@
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/job_manager.h"
+#include "task_watchdog.h"
 
 /**
  * @brief GLOBAL SYSTEM STATE */
@@ -65,8 +66,9 @@ void app_start_task_dispatcher(void *argument)
 		// Пытаемся прочитать 1 байт из буфера потока.
 		// Блокируемся на время portMAX_DELAY, если данных нет.
 		uint8_t current_byte;
+		Watchdog_Kick(TASK_ID_DISPATCHER);
 		size_t bytes_read = xStreamBufferReceive(usb_rx_stream_buffer_handle,
-				(void*)&current_byte, 1, portMAX_DELAY);
+				(void*)&current_byte, 1, pdMS_TO_TICKS(1000));
 
 		if (bytes_read > 0)
 			{

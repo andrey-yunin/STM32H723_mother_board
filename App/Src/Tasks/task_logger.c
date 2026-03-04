@@ -7,29 +7,28 @@
 
 #include "task_logger.h"
 #include "cmsis_os.h"
+#include "task_watchdog.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "main.h"
+#include "dispatcher_io.h"
 
 
 void app_start_task_logger(void *argument)
 {
-	/** char log_buffer[APP_LOG_MESSAGE_MAX_LEN];
+	USB_TxPacket_t tx_packet;
 
+	for(;;)
+		{
+		Watchdog_Kick(TASK_ID_LOGGER);
 
-    for(;;)
-    	{
-    	// Ждем сообщение из очереди log_queue
-    	if (xQueueReceive(log_queue_handle, (void *)log_buffer, portMAX_DELAY) == pdPASS)
-    		{
-    		// Полученное от диспетчера сообщение перенаправляем в очередь на отправку по USB
-    		xQueueSend(usb_tx_queue_handle, (void *)log_buffer, pdMS_TO_TICKS(100));
-    		}
-    	HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-    	osDelay(1000); // Задержка 1 секунда
-        }
-        */
-
+		// Ждём сообщение из log_queue с таймаутом (для heartbeat)
+		if (xQueueReceive(log_queue_handle, (void *)&tx_packet, pdMS_TO_TICKS(1000)) == pdPASS)
+			{
+			// Перенаправляем в очередь USB TX
+			xQueueSend(usb_tx_queue_handle, &tx_packet, pdMS_TO_TICKS(100));
+			}
+		}
 }
 
 

@@ -8,6 +8,8 @@
 #include "task_jobs_monitor.h"
 #include "cmsis_os.h"
 #include "Dispatcher/job_manager.h"
+#include "task_watchdog.h"
+
 
 #define JOBS_MONITOR_PERIOD_MS 100
 
@@ -23,6 +25,8 @@ void app_start_task_jobs_monitor(void *argument)
 
   for(;;)
   {
+	  Watchdog_Kick(TASK_ID_JOBS_MONITOR);
+
 	  JobManager_Run();
 	  // "Засыпаем" на заданный период
 	  osDelay(JOBS_MONITOR_PERIOD_MS);
