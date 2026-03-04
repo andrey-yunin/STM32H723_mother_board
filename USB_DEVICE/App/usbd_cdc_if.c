@@ -320,8 +320,8 @@ static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
   */
 uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len)
 {
-	uint8_t result = USBD_OK;
-	/* USER CODE BEGIN 12 */
+  uint8_t result = USBD_OK;
+  /* USER CODE BEGIN 12 */
 	USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceHS.pClassData;
 	if (hcdc->TxState != 0){
 		return USBD_BUSY;
@@ -335,8 +335,8 @@ uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len)
 	// Указываем USB-драйверу использовать НАШ безопасный буфер для передачи
 	USBD_CDC_SetTxBuffer(&hUsbDeviceHS, UserTxBufferHS, Len);
 	result = USBD_CDC_TransmitPacket(&hUsbDeviceHS);
-	/* USER CODE END 12 */
-	return result;
+  /* USER CODE END 12 */
+  return result;
 }
 
 /**

@@ -89,7 +89,7 @@ const osThreadAttr_t task_watchdog_attributes = {
 osThreadId_t task_jobs_monitHandle;
 const osThreadAttr_t task_jobs_monit_attributes = {
   .name = "task_jobs_monit",
-  .stack_size = 128 * 4,
+  .stack_size = 768 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for task_logger */

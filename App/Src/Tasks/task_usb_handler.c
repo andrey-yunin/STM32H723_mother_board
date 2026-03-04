@@ -27,8 +27,15 @@ void app_start_task_usb_handler(void *argument)
 		// 1. Ждем пакет из очереди на отправку
 		if (xQueueReceive(usb_tx_queue_handle, &received_packet, portMAX_DELAY) == pdPASS)
 			{
-			// 2. Ждем, пока USB-передатчик освободится
-			osSemaphoreAcquire(usb_tx_semHandle, osWaitForever);
+			// 2.  Ждём освобождения USB TX с таймаутом.
+			// Если callback CDC_TransmitCplt_HS не сработал за 1 сек —
+			// пропускаем пакет, чтобы не зависнуть навсегда.
+			if (osSemaphoreAcquire(usb_tx_semHandle, pdMS_TO_TICKS(1000)) != osOK)
+				{
+				// USB TX завис — принудительно освобождаем семафор для следующего пакета
+				osSemaphoreRelease(usb_tx_semHandle);
+				continue;
+				}
 
 			// 3. Отправляем данные по USB, используя точную длину из пакета
 			uint16_t len_to_send = received_packet.length;
@@ -37,13 +44,17 @@ void app_start_task_usb_handler(void *argument)
 			// Если для строковых сообщений это будет необходимо,
 			// мы добавим это в `Dispatcher_SendUsbResponse`.
 
-			// Пытаемся начать передачу, пока USB занят
+			// Пытаемся отправить с лимитом попыток.
+			// Если USB отключён или хост не принимает данные — не зависаем.
+			int retries = 200;
 			while (CDC_Transmit_HS(received_packet.data, len_to_send) == USBD_BUSY)
 				{
-				osDelay(1); // Уступаем процессорное время
+				if (--retries <= 0)
+					{
+					break;  // USB недоступен — пропускаем пакет
+					}
+				osDelay(1);
 				}
-			// Как только CDC_Transmit_HS вернет USBD_OK, передача началась.
-			// Семафор будет освобожден в колбэке CDC_TransmitCplt_HS.
 			}
 		}
 }

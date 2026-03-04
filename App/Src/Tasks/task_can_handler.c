@@ -12,6 +12,8 @@
 #include "can_message.h"        // Для нашей структуры CanMessage_t
 #include "command_protocol.h"   // Для перечисления CommandID_t
 #include "Dispatcher/can_packer.h"
+ #include "Dispatcher/executor_simulator.h"
+
 
 // --- Внешние переменные ---
 // Объявлены в main.c, здесь мы сообщаем компилятору, что будем их использовать.
@@ -21,6 +23,8 @@ void app_start_task_can_handler(void *argument)
 {
 	// --- 1. Инициализация и запуск CAN-шины ---
 	// Эти функции активируют CAN-контроллер и разрешают прерывания.
+
+	/*
 	if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
 		{// Если CAN не запустился, уходим в вечный цикл, что-то не так с конфигурацией.
 		 // В реальной системе здесь будет логирование ошибки.
@@ -33,8 +37,17 @@ void app_start_task_can_handler(void *argument)
 		while(1);
 		}
 
+	*/
 
-	// >>> НАЧАЛО НОВОГО ТЕСТОВОГО КОДА ДЛЯ ДАТЧИКОВ ТЕМПЕРАТУРЫ <<<
+	// >>> ТЕСТОВЫЙ КОД ОТКЛЮЧЁН (тип CanMessage_t несовместим с CAN_Message_t в очереди) <<<
+
+
+
+
+
+	#if 0
+
+// >>> НАЧАЛО НОВОГО ТЕСТОВОГО КОДА ДЛЯ ДАТЧИКОВ ТЕМПЕРАТУРЫ <<<
 
 	{
 		osDelay(1000);
@@ -62,6 +75,7 @@ void app_start_task_can_handler(void *argument)
 		}
 	// <<< КОНЕЦ НОВОГО ТЕСТОВОГО КОДА >>>
 
+#endif
 
 
 /*
@@ -170,7 +184,13 @@ void app_start_task_can_handler(void *argument)
 		{
 		if(xQueueReceive(can_tx_queue_handle, &tx_msg, portMAX_DELAY) == pdPASS)
 			{
+
 			// Конвертация CAN_Message_t → HAL FDCAN формат
+			// --- Режим имитатора: HAL-отправка пропущена ---
+			// Когда подключён реальный CAN-трансивер, раскомментировать
+			// блок конвертации и отправки HAL_FDCAN_AddMessageToTxFifoQ.
+			/*
+
 			FDCAN_TxHeaderTypeDef hal_header;
 			hal_header.Identifier = tx_msg.id;
 			hal_header.IdType = tx_msg.is_extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
@@ -198,6 +218,11 @@ void app_start_task_can_handler(void *argument)
 	        	{
 	        	// TODO: обработка ошибки отправки
 	        	}
+	        	*/
+
+	        // Имитатор: генерируем DONE-ответ для каждой отправленной команды.
+	        // Убрать эту строку при подключении реального CAN-оборудования.
+	        ExecutorSim_ProcessTxMessage(&tx_msg);
 	        }
 		}
 }

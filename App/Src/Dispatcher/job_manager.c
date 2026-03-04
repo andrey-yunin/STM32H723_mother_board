@@ -282,29 +282,83 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 
 void JobManager_Run(void)
 {
+	// --- 1. Обработка входящих CAN-ответов от исполнителей (или имитатора) ---
+	CAN_Message_t rx_msg;
+	while (xQueueReceive(can_rx_queue_handle, &rx_msg, 0) == pdPASS) {
+		CAN_Response_t response;
+		if (!Packer_ParseCanResponse(&rx_msg, &response)) {
+			Dispatcher_SendUsbResponse("WARNING: Invalid CAN RX frame, skipping.");
+			continue;
+			}
+
+		switch (response.msg_type) {
+			case CAN_MSG_TYPE_ACK:
+				// ACK = подтверждение приёма, не продвигаем задание
+				break;
+
+			case CAN_MSG_TYPE_NACK: {
+				// NACK = ошибка исполнителя → завершаем задание с ошибкой
+				for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
+					if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
+						char err_msg[APP_USB_RESP_MAX_LEN];
+						snprintf(err_msg, sizeof(err_msg),
+								"ERROR: NACK from executor 0x%02X, cmd=0x%04X, err=0x%04X.",
+								response.source_addr, response.command_code, response.error_code);
+						Dispatcher_SendUsbResponse(err_msg);
+						JobManager_ProcessExecutorResponse(
+								g_active_jobs[i].job_id,
+								response.source_addr,
+								false);
+						break;
+						}
+					}
+				break;
+				}
+
+			case CAN_MSG_TYPE_DATA_DONE_LOG:
+				if (response.sub_type == CAN_SUB_TYPE_DONE) {
+					// DONE = исполнитель завершил действие → продвигаем задание
+					for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
+						if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
+							JobManager_ProcessExecutorResponse(
+									g_active_jobs[i].job_id,
+									response.source_addr,
+									true);
+							break;
+							}
+						}
+					}
+				// DATA и LOG — пока игнорируем
+				break;
+
+			default:
+				break;
+				}
+		}
+
+	// --- 2. Проверка таймаутов и обработка WAIT_MS (существующая логика) ---
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 		JobContext_t* job = &g_active_jobs[i];
 		if (job->status == JOB_STATUS_RUNNING) {
 			if ((HAL_GetTick() - job->step_start_time_ms) > JOB_TIMEOUT_MS) {
 				char err_msg[APP_USB_RESP_MAX_LEN];
 				snprintf(err_msg, sizeof(err_msg), "ERROR: Job #%lu timed out at step %u.", (unsigned long)job->job_id, job->current_step_index);
-				Dispatcher_SendUsbResponse(err_msg);
-				JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
-				continue;
-            }
-            const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
-            if (current_step->num_actions == 1 && current_step->atomic_actions[0].action == ACTION_WAIT_MS) {
+						Dispatcher_SendUsbResponse(err_msg);
+						JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
+						continue;
+						}
 
-            // added 04/02/2026--- NEW: Determine effective delay_ms for ACTION_WAIT_MS ---
-            // We need to get the effective action here because current_step->atomic_actions[0] is const
-            uint32_t effective_wait_delay_ms = JobManager_GetUint32Param(
-            		job, current_step->atomic_actions[0].params.wait.delay_ms_source,current_step->atomic_actions[0].params.wait.delay_ms);
-            if ((HAL_GetTick() - job->step_start_time_ms) >= effective_wait_delay_ms) { // Use dynamic delay_ms
-            	JobManager_ProcessExecutorResponse(job->job_id, 0, true);
-            	}
-            }
+			const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
+			if (current_step->num_actions == 1 && current_step->atomic_actions[0].action == ACTION_WAIT_MS) {
+				uint32_t effective_wait_delay_ms = JobManager_GetUint32Param(
+						job, current_step->atomic_actions[0].params.wait.delay_ms_source,
+						current_step->atomic_actions[0].params.wait.delay_ms);
+				if ((HAL_GetTick() - job->step_start_time_ms) >= effective_wait_delay_ms) {
+					JobManager_ProcessExecutorResponse(job->job_id, 0, true);
+					}
+				}
+			}
 		}
-	}
 }
 
 // --- Внутренние функции ---
@@ -406,7 +460,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	Packer_CreateRotateMotorMsg(effective_rotate_motor_id, effective_rotate_motor_steps, effective_rotate_motor_speed, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Simulate response
+            	//job->pending_actions_count--; // Simulate response
             	break;
 
             case ACTION_START_PUMP:
@@ -418,7 +472,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	Packer_CreateStartPumpMsg(effective_start_pump_id, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Simulate response
+            	//job->pending_actions_count--; // Simulate response
             	break;
 
 
@@ -431,7 +485,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	Dispatcher_SendUsbResponse(info_msg);
             	Packer_CreateStopPumpMsg(effective_stop_pump_id, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Simulate response
+            	//job->pending_actions_count--; // Simulate response
             	break;
 
 
@@ -441,7 +495,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 Dispatcher_SendUsbResponse(info_msg);
                 Packer_CreateHomeMotorMsg(effective_home_motor_id, effective_home_motor_speed, job->job_id, &can_msg); // added 04/02/2026 ТЕПЕРЬ ИСПОЛЬЗУЕМ effective_home_motor_id/speed
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
-                job->pending_actions_count--; // Simulate response
+                //job->pending_actions_count--; // Simulate response
                 break;
 
             case ACTION_WAIT_MS:
@@ -469,7 +523,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	// Скорость 0 — заглушка, потом параметризуем.
             	Packer_CreateStartContinuousMotorMsg(effective_start_mixing_motor_id, 0, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Имитация ответа
+            	//job->pending_actions_count--; // Имитация ответа
             	break;
 
             case ACTION_STOP_MIXING_MOTOR: // <-- added 13/02/2026
@@ -482,7 +536,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	// added 03.03.2026 создаем необходимую функцию:
             	Packer_CreateStopMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Имитация ответа
+            	//job->pending_actions_count--; // Имитация ответа
             	break;
 
             case ACTION_PERFORM_SCAN: // <-- added for PHOTOMETER_SCAN_SINGLE
@@ -496,7 +550,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	// added 03.03.2026 создаем необходимую функцию:
             	Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	job->pending_actions_count--; // Simulate response
+            	//job->pending_actions_count--; // Simulate response
             	break;
 
             default:
