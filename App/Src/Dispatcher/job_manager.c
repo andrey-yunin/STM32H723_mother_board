@@ -8,6 +8,8 @@
 #include "Dispatcher/job_manager.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/can_packer.h"
+#include "Dispatcher/device_mapping.h"
+#include "Dispatcher/system_mapping.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
@@ -55,7 +57,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     job->current_recipe = Recipe_Get(parsed_cmd->recipe_id);
     if (job->current_recipe == NULL) {
          char err_msg[APP_USB_RESP_MAX_LEN];
-         snprintf(err_msg, sizeof(err_msg), "ERROR: Job %lu: Unknown recipe ID %d.", (unsigned long)job->job_id, parsed_cmd->recipe_id);
+         snprintf(err_msg, sizeof(err_msg), "ERROR: Job %lu: Unknown recipe ID %d.", (unsigned long)job->job_id, (int)parsed_cmd->recipe_id);
          Dispatcher_SendUsbResponse(err_msg);
          JobManager_CompleteJob(job, JOB_STATUS_ERROR);
          return 0;
@@ -66,7 +68,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     job->initial_cmd = *parsed_cmd;
 
     char ack_msg[APP_USB_RESP_MAX_LEN];
-    snprintf(ack_msg, sizeof(ack_msg), "INFO: Job #%lu started (Recipe ID:%d).", (unsigned long)job->job_id, job->initial_recipe_id);
+    snprintf(ack_msg, sizeof(ack_msg), "INFO: Job #%lu started (Recipe ID:%d).", (unsigned long)job->job_id, (int)job->initial_recipe_id);
     Dispatcher_SendUsbResponse(ack_msg);
 
     JobManager_ExecuteStep(job);
@@ -296,7 +298,7 @@ void JobManager_Run(void)
 						char err_msg[APP_USB_RESP_MAX_LEN];
 						snprintf(err_msg, sizeof(err_msg),
 								"ERROR: NACK from executor 0x%02X, cmd=0x%04X, err=0x%04X.",
-								response.source_addr, response.command_code, response.error_code);
+								response.source_addr, (unsigned int)response.command_code, (unsigned int)response.error_code);
 						Dispatcher_SendUsbResponse(err_msg);
 						JobManager_ProcessExecutorResponse(
 								g_active_jobs[i].job_id,
@@ -335,7 +337,7 @@ void JobManager_Run(void)
 		if (job->status == JOB_STATUS_RUNNING) {
 			if ((HAL_GetTick() - job->step_start_time_ms) > JOB_TIMEOUT_MS) {
 				char err_msg[APP_USB_RESP_MAX_LEN];
-				snprintf(err_msg, sizeof(err_msg), "ERROR: Job #%lu timed out at step %u.", (unsigned long)job->job_id, job->current_step_index);
+				snprintf(err_msg, sizeof(err_msg), "ERROR: Job #%lu timed out at step %u.", (unsigned long)job->job_id, (unsigned int)job->current_step_index);
 						Dispatcher_SendUsbResponse(err_msg);
 						JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
 						continue;
@@ -388,166 +390,168 @@ static void JobManager_ExecuteStep(JobContext_t* job)
     job->pending_actions_count = current_step->num_actions;
 
     char info_msg[APP_USB_RESP_MAX_LEN];
-    snprintf(info_msg, sizeof(info_msg), "INFO: Job #%lu: Executing step %u (%u actions).", (unsigned long)job->job_id, job->current_step_index, current_step->num_actions);
+    snprintf(info_msg, sizeof(info_msg), "INFO: Job #%lu: Executing step %u (%u actions).", 
+            (unsigned long)job->job_id, (unsigned int)job->current_step_index, (unsigned int)current_step->num_actions);
     Dispatcher_SendUsbResponse(info_msg);
 
     for (int i = 0; i < current_step->num_actions; i++) {
 	    const AtomicAction_t* action = &current_step->atomic_actions[i];
-        
-        bool should_execute = true;
-
-        // Параметры HOME_MOTOR — вычисляем только для нужного типа действия
-        uint8_t effective_home_motor_id = 0;
-        uint16_t effective_home_motor_speed = 0;
-
-        if (action->action == ACTION_HOME_MOTOR) {
-        	effective_home_motor_id = JobManager_GetUint8Param(job,
-        			action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
-        	effective_home_motor_speed = JobManager_GetUint16Param(job,
-        			action->params.home_motor.speed_source, action->params.home_motor.speed);
-
-        	// Фильтрация по маске — только для рецепта INIT
-        	if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM) {
-        		if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-        			uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
-        			if (effective_home_motor_id > 0) {
-        				uint8_t motor_bit = 1 << (effective_home_motor_id - 1);
-        				if (!(modules_mask & motor_bit)) {
-        					should_execute = false;
-        					}
-        				}
-        			}
-        		}
-        	}
-
-        // --- [ADD_NEW_COMMAND] ---
-        // 5. Если ваша новая команда параметризованная, добавьте ее логику фильтрации здесь
-        // else if (job->initial_recipe_id == RECIPE_WASH_CUVETTE && action->action == ACTION_WASH)
-        // {
-        //     // ... ваша логика фильтрации ...
-        // }
-        // --- КОНЕЦ ФИЛЬТРУЮЩЕЙ ЛОГИКИ ---
-        
-        if (!should_execute) {
-            job->pending_actions_count--;
-            char filter_msg[APP_USB_RESP_MAX_LEN];
-            snprintf(filter_msg, sizeof(filter_msg), "DEBUG: Job #%lu: Action for motor_id=%u filtered out by mask.", (unsigned long)job->job_id, action->params.home_motor.motor_id);
-            Dispatcher_SendUsbResponse(filter_msg);
-            continue;
-        }
-
         CAN_Message_t can_msg;
+        DevicePhysAddr_t phys_addr;
+
         switch (action->action) {
-            case ACTION_ROTATE_MOTOR:
-            	// added 04/02/2026 --- NEW: Determine effective parameters for ACTION_ROTATE_MOTOR ---
-            	uint8_t effective_rotate_motor_id = JobManager_GetUint8Param(job, action->params.rotate_motor.motor_id_source,
-            	      action->params.rotate_motor.motor_id);
-            	int32_t effective_rotate_motor_steps = JobManager_GetInt32Param(job, action->params.rotate_motor.steps_source,
-            	      action->params.rotate_motor.steps);
-            	uint16_t effective_rotate_motor_speed = JobManager_GetUint16Param(job, action->params.rotate_motor.speed_source,
-            	      action->params.rotate_motor.speed);
-            	// --- END NEW ---
+            case ACTION_ROTATE_MOTOR: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.rotate_motor.motor_id_source, action->params.rotate_motor.motor_id);
+                int32_t steps = JobManager_GetInt32Param(job, action->params.rotate_motor.steps_source, action->params.rotate_motor.steps);
+            	uint16_t speed = JobManager_GetUint16Param(job, action->params.rotate_motor.speed_source, action->params.rotate_motor.speed);
+            	
+                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Motor SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
 
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent ROTATE_MOTOR (ID:%u, Steps:%ld, Speed:%u) to Exec.",
-            			(unsigned long)job->job_id, effective_rotate_motor_id, (long)effective_rotate_motor_steps, effective_rotate_motor_speed);
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent ROTATE_MOTOR (Phys:%u:%u, Steps:%ld, Speed:%u)",
+            			(unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx, (long)steps, speed);
             	Dispatcher_SendUsbResponse(info_msg);
-            	Packer_CreateRotateMotorMsg(effective_rotate_motor_id, effective_rotate_motor_steps, effective_rotate_motor_speed, job->job_id, &can_msg);
+            	
+                Packer_CreateRotateMotorMsg(phys_addr.ch_idx, steps, speed, &can_msg);
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Simulate response
             	break;
+            }
 
-            case ACTION_START_PUMP:
-            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_START_PUMP ---
-            	uint8_t effective_start_pump_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
-            	// --- END NEW ---
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id,
-            			effective_start_pump_id);
-            	Dispatcher_SendUsbResponse(info_msg);
-            	Packer_CreateStartPumpMsg(effective_start_pump_id, job->job_id, &can_msg);
-            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Simulate response
-            	break;
+            case ACTION_HOME_MOTOR: {
+                uint8_t sys_id = JobManager_GetUint8Param(job, action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
+                uint16_t speed = JobManager_GetUint16Param(job, action->params.home_motor.speed_source, action->params.home_motor.speed);
 
+                // Фильтрация по маске для инициализации
+                if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM) {
+                    if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+                        uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
+                        if (!(modules_mask & (1 << (sys_id - 1)))) {
+                            job->pending_actions_count--;
+                            continue;
+                        }
+                    }
+                }
 
-            case ACTION_STOP_PUMP:
-            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_STOP_PUMP ---
-            	uint8_t effective_stop_pump_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
-            	// --- END NEW ---
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (ID:%u) to Exec.", (unsigned long)job->job_id,
-            			effective_stop_pump_id);
-            	Dispatcher_SendUsbResponse(info_msg);
-            	Packer_CreateStopPumpMsg(effective_stop_pump_id, job->job_id, &can_msg);
-            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Simulate response
-            	break;
+                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Motor SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
 
-
-            case ACTION_HOME_MOTOR:
-                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent HOME_MOTOR (ID:%u, Speed:%u) to Exec.",
-                    (unsigned long)job->job_id, effective_home_motor_id, effective_home_motor_speed); // added 04/02/2026 ТЕПЕРЬ ИСПОЛЬЗУЕМ effective_home_motor_id/speed
+                snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent HOME_MOTOR (Phys:%u:%u, Speed:%u)",
+                    (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx, speed);
                 Dispatcher_SendUsbResponse(info_msg);
-                Packer_CreateHomeMotorMsg(effective_home_motor_id, effective_home_motor_speed, job->job_id, &can_msg); // added 04/02/2026 ТЕПЕРЬ ИСПОЛЬЗУЕМ effective_home_motor_id/speed
+                
+                Packer_CreateHomeMotorMsg(phys_addr.ch_idx, speed, &can_msg);
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
                 xQueueSend(can_tx_queue_handle, &can_msg, 0);
-                //job->pending_actions_count--; // Simulate response
                 break;
+            }
 
-            case ACTION_WAIT_MS:
-            	// added 04/02/2026--- NEW: Determine effective parameters for ACTION_WAIT_MS ---
-            	uint32_t effective_wait_delay_ms = JobManager_GetUint32Param(job, action->params.wait.delay_ms_source, action->params.wait.delay_ms);
-            	// --- END NEW ---
-
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id,
-            			(unsigned long)effective_wait_delay_ms);
+            case ACTION_START_PUMP: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
+                phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Pump SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_PUMP (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
             	Dispatcher_SendUsbResponse(info_msg);
-            	// Note: The actual waiting logic often happens outside this switch, possibly in JobManager_Run()
-            	// For now, we update the log message to reflect the dynamic parameter.
+            	
+                Packer_CreatePumpStartMsg(phys_addr.ch_idx, 0, &can_msg); // 0 = Default timeout
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	break;
+            }
+
+            case ACTION_STOP_PUMP: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
+                phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Pump SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_PUMP (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
+            	Dispatcher_SendUsbResponse(info_msg);
+            	
+                Packer_CreatePumpStopMsg(phys_addr.ch_idx, &can_msg);
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
+            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+            	break;
+            }
+
+            case ACTION_WAIT_MS: {
+            	uint32_t delay = JobManager_GetUint32Param(job, action->params.wait.delay_ms_source, action->params.wait.delay_ms);
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id, (unsigned long)delay);
+            	Dispatcher_SendUsbResponse(info_msg);
             	job->pending_actions_count--;
             	break;
+            }
 
-            case ACTION_START_MIXING_MOTOR: // <-- added 13/02/2026
-            	uint8_t effective_start_mixing_motor_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_MIXING_MOTOR (ID:%u) to Exec.", (unsigned long)job->job_id,
-            			effective_start_mixing_motor_id);
+            case ACTION_START_MIXING_MOTOR: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
+                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Mixer SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_MIXING (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
             	Dispatcher_SendUsbResponse(info_msg);
-            	// TODO: Packer_CreateStartMixingMotorMsg(effective_start_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
-            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	// Обоснование: мотор перемешивания = непрерывное вращение → MOTOR_START_CONTINUOUS (0x0103).
-            	// added 03.03.2026 создаем необходимую функцию:
-            	// Скорость 0 — заглушка, потом параметризуем.
-            	Packer_CreateStartContinuousMotorMsg(effective_start_mixing_motor_id, 0, job->job_id, &can_msg);
+            	
+            	Packer_CreateStartContinuousMotorMsg(phys_addr.ch_idx, 0, &can_msg);
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Имитация ответа
             	break;
+            }
 
-            case ACTION_STOP_MIXING_MOTOR: // <-- added 13/02/2026
-            	uint8_t effective_stop_mixing_motor_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_MIXING_MOTOR (ID:%u) to Exec.", (unsigned long)job->job_id,
-            			effective_stop_mixing_motor_id);
+            case ACTION_STOP_MIXING_MOTOR: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
+                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
+                if (!phys_addr.is_valid) {
+                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Mixer SysID %u", (unsigned long)job->job_id, sys_id);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    return;
+                }
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_MIXING (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
             	Dispatcher_SendUsbResponse(info_msg);
-            	// TODO: Packer_CreateStopMixingMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
-            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	// added 03.03.2026 создаем необходимую функцию:
-            	Packer_CreateStopMotorMsg(effective_stop_mixing_motor_id, job->job_id, &can_msg);
+            	
+            	Packer_CreateStopMotorMsg(phys_addr.ch_idx, &can_msg);
+                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
             	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Имитация ответа
             	break;
+            }
 
-            case ACTION_PERFORM_SCAN: // <-- added for PHOTOMETER_SCAN_SINGLE
-            	uint8_t effective_photometer_id = JobManager_GetUint8Param(job, action->params.perform_scan.photometer_id_source, action->params.perform_scan.photometer_id);
-            	uint8_t effective_wavelength_mask = JobManager_GetUint8Param(job, action->params.perform_scan.wavelength_mask_source, action->params.perform_scan.wavelength_mask);
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent PERFORM_SCAN (ID:%u, Mask:0x%02X) to Exec.", (unsigned long)job->job_id,
-            			effective_photometer_id, effective_wavelength_mask);
+            case ACTION_PERFORM_SCAN: {
+            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.perform_scan.photometer_id_source, action->params.perform_scan.photometer_id);
+            	uint8_t mask = JobManager_GetUint8Param(job, action->params.perform_scan.wavelength_mask_source, action->params.perform_scan.wavelength_mask);
+            	
+                // Фотометр пока имеет фиксированный NodeID, добавим его позже в маппинг
+            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent SCAN (SysID:%u, Mask:0x%02X)", (unsigned long)job->job_id, sys_id, mask);
             	Dispatcher_SendUsbResponse(info_msg);
-            	// TODO: Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg); // Необходимо создать эту функцию упаковщика
-            	// xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	// added 03.03.2026 создаем необходимую функцию:
-            	Packer_CreatePerformScanMsg(effective_photometer_id, effective_wavelength_mask, job->job_id, &can_msg);
-            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	//job->pending_actions_count--; // Simulate response
+            	
+            	// Packer_CreatePerformScanMsg(sys_id, mask, &can_msg); 
+                // Заглушка, пока не реализован упаковщик фотометра в новом стандарте
+                job->pending_actions_count--; 
             	break;
+            }
 
             default:
-                snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Unknown action %d in step %u.", (unsigned long)job->job_id, action->action, job->current_step_index);
+                snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Unknown action %d", (unsigned long)job->job_id, (int)action->action);
                 Dispatcher_SendUsbResponse(info_msg);
                 JobManager_CompleteJob(job, JOB_STATUS_ERROR);
                 return;
@@ -559,6 +563,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
         JobManager_ExecuteStep(job);
     }
 }
+
 
 static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status)
 {

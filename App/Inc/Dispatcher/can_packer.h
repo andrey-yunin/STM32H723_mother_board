@@ -1,134 +1,178 @@
 /*
  * can_packer.h
  *
- *  Created on: Dec 4, 2025
- *      Author: andrey
+ * МОДЕРНИЗАЦИЯ ПОД СТАНДАРТ ЭКОСИСТЕМЫ DDS-240 (Директива 2.0)
+ * -----------------------------------------------------------
+ * Данный модуль является "Умным Шлюзом" между Big-endian миром Хоста 
+ * (протокол CM>) и Little-endian миром Исполнителей (CAN 2.0B).
+ *
+ * Ключевые принципы:
+ * 1. Строгий DLC=8 для всех команд (упрощение фильтрации на bxCAN).
+ * 2. Унифицированный Payload: [0-1] Код, [2] Канал, [3-6] Параметр, [7] Резерв.
+ * 3. Физическая адресация: переход на NodeID (0x20, 0x30, 0x40) и 0-based индексы.
+ *
+ *  Created on: Dec 4, 2025 (Updated: Apr 9, 2026)
+ *      Author: andrey (Gemini CLI)
  */
 
 #ifndef INC_DISPATCHER_CAN_PACKER_H_
 #define INC_DISPATCHER_CAN_PACKER_H_
 
-#include <stdint.h> // Для uint8_t, uint32_t и т.д.
+#include <stdint.h>
 #include <stdbool.h>
 
-// ============================================================
-// CAN-кадр: абстрактная структура (не зависит от HAL)
-// Используется в can_packer, job_manager, очереди FreeRTOS.
-// task_can_handler конвертирует в/из HAL-формат.
-// ============================================================
+// ============================================================================
+// ---                  СТРУКТУРЫ ДАННЫХ (Data Structures)                  ---
+// ============================================================================
 
+/**
+ * @brief Абстрактная структура CAN-кадра.
+ * Используется внутри Дирижера для передачи между задачами (FreeRTOS Queues).
+ * По Директиве 2.0 поле data всегда содержит 8 байт для исходящих команд.
+ */
 typedef struct {
-	uint32_t id;        // 29-bit Extended CAN ID
-    uint8_t  data[8];   // Payload (до 8 байт для Classic CAN)
-    uint8_t  dlc;       // Data Length Code (0-8)
-    bool     is_extended; // true = 29-bit ID, false = 11-bit ID
-    } CAN_Message_t;
+    uint32_t id;            // 29-битный расширенный идентификатор (Extended ID)
+    uint8_t  data[8];       // Полезная нагрузка (Payload)
+    uint8_t  dlc;           // Длина данных (для команд всегда 8)
+    bool     is_extended;   // Флаг расширенного кадра (всегда true)
+} CAN_Message_t;
 
-// ============================================================
-// Структура распакованного ответа от исполнителя
-// ============================================================
-
+/**
+ * @brief Результат парсинга ответа от Исполнителя.
+ * Позволяет Диспетчеру (JobManager) принимать решения на основе типа ответа.
+ */
 typedef struct {
-	uint8_t  msg_type;      // CAN_MSG_TYPE_ACK / NACK / DATA_DONE_LOG
-    uint8_t  source_addr;   // Адрес отправителя (исполнителя)
-    uint16_t command_code;  // Код команды, на которую ответ
-    uint16_t error_code;    // Код ошибки (для ACK/NACK, 0 = нет ошибки)
-    uint8_t  sub_type;      // Для msg_type==DATA_DONE_LOG: 0x01=DONE, 0x02=DATA, 0x03=LOG
-    uint8_t  data[6];       // Данные (для DATA sub-type)
-    uint8_t  data_len;      // Длина данных
-    } CAN_Response_t;
+    uint8_t  msg_type;      // Тип: ACK, NACK или DATA_DONE_LOG
+    uint8_t  source_addr;   // От кого пришло (NodeID исполнителя)
+    uint16_t command_code;  // Код команды, на которую отвечает исполнитель
+    uint16_t error_code;    // Код ошибки (0 = OK, >0 = ошибка из реестра NACK)
+    uint8_t  sub_type;      // Подтип для DATA_DONE_LOG: 0x01=DONE, 0x02=DATA, 0x03=LOG
+    uint8_t  ch_idx;        // Индекс физического канала (из байта 1 ответа)
+    uint8_t  data[6];       // Сырые данные ответа (байты 2-7 payload)
+    uint8_t  data_len;      // Фактическая длина данных в массиве data
+} CAN_Response_t;
 
-// ============================================================
-// Константы протокола: 29-bit CAN ID
-// По спецификации 2_Frame_Format.md
-// ============================================================
 
-// --- Приоритеты (биты 28-26) ---
-#define CAN_PRIORITY_HIGH       0   // Команды от дирижера
-#define CAN_PRIORITY_NORMAL     1   // Ответы от исполнителей
+// ============================================================================
+// ---                 КОНСТАНТЫ ТРАНСПОРТНОГО УРОВНЯ                       ---
+// ============================================================================
 
-// --- Типы сообщений (биты 25-24) ---
-#define CAN_MSG_TYPE_COMMAND    0   // Команда (Conductor → Executor)
-#define CAN_MSG_TYPE_ACK        1   // Подтверждение (Executor → Conductor)
-#define CAN_MSG_TYPE_NACK       2   // Ошибка (Executor → Conductor)
-#define CAN_MSG_TYPE_DATA_DONE_LOG 3 // DATA/DONE/LOG (Executor → Conductor)
+// --- Приоритеты (биты 28-26 ID) ---
+#define CAN_PRIORITY_HIGH       0   // Для управляющих команд Дирижера
+#define CAN_PRIORITY_NORMAL     1   // Для ответов и логов Исполнителей
 
-// --- Подтипы для MSG_TYPE_DATA_DONE_LOG (первый байт payload) ---
-#define CAN_SUB_TYPE_DONE       0x01
-#define CAN_SUB_TYPE_DATA       0x02
-#define CAN_SUB_TYPE_LOG        0x03
+// --- Типы сообщений (биты 25-24 ID) ---
+#define CAN_MSG_TYPE_COMMAND        0   // Запрос действия (Conductor -> Executor)
+#define CAN_MSG_TYPE_ACK            1   // Подтверждение приема (OK)
+#define CAN_MSG_TYPE_NACK           2   // Ошибка приема/параметров (Error)
+#define CAN_MSG_TYPE_DATA_DONE_LOG  3   // Событийный обмен (Data, Done, Log)
 
-// --- Адреса узлов (биты 23-16 dst, 15-8 src) ---
-#define CAN_ADDR_BROADCAST      0x00
-#define CAN_ADDR_HOST           0x01
-#define CAN_ADDR_CONDUCTOR      0x10
-#define CAN_ADDR_MOTOR_BOARD    0x20  // Плата управления шаговыми двигателями
-#define CAN_ADDR_PUMP_BOARD     0x30  // Плата управления насосами/клапанами
-#define CAN_ADDR_THERMO_BOARD   0x40  // Плата датчиков температуры
+// --- Подтипы для типа DATA_DONE_LOG (байт 0 payload) ---
+#define CAN_SUB_TYPE_DONE           0x01 // Физическое завершение действия
+#define CAN_SUB_TYPE_DATA           0x02 // Результат измерения (напр. Температура)
+#define CAN_SUB_TYPE_LOG            0x03 // Текстовое сообщение для отладки
 
-// --- Коды низкоуровневых команд (байты 0-1 payload) ---
-#define CAN_CMD_MOTOR_ROTATE          0x0101
-#define CAN_CMD_MOTOR_HOME            0x0102
-#define CAN_CMD_MOTOR_START_CONTINUOUS 0x0103
-#define CAN_CMD_MOTOR_STOP            0x0104
-#define CAN_CMD_PUMP_RUN_DURATION     0x0201  // Резерв (не используется в текущей прошивке)
-#define CAN_CMD_PUMP_START            0x0202
-#define CAN_CMD_PUMP_STOP             0x0203
-#define CAN_CMD_PHOTOMETER_SCAN       0x0401
+// --- Сетевая топология (NodeID, биты 23-8 ID) ---
+#define CAN_ADDR_BROADCAST      0x00    // Широковещательный адрес
+#define CAN_ADDR_CONDUCTOR      0x10    // Адрес Дирижера (Master)
+#define CAN_ADDR_MOTOR_BOARD    0x20    // Плата Motion (Шаговые двигатели)
+#define CAN_ADDR_PUMP_BOARD     0x30    // Плата Fluidic (Насосы и Клапаны)
+#define CAN_ADDR_THERMO_BOARD   0x40    // Плата Thermo (Датчики температуры)
 
-// ============================================================
-// Макрос конструирования 29-bit CAN ID
-// ============================================================
+
+// ============================================================================
+// ---                  РЕЕСТР КОМАНД (Command Registry)                    ---
+// ---           Все коды упаковываются в байты 0-1 (Little-Endian)         ---
+// ============================================================================
+
+// --- Группа 1: Motion (0x01xx) ---
+#define CAN_CMD_MOTOR_ROTATE            0x0101 // Вращение на шаги
+#define CAN_CMD_MOTOR_HOME              0x0102 // Поиск начальной точки (0)
+#define CAN_CMD_MOTOR_START_CONTINUOUS  0x0103 // Непрерывное вращение (Миксер)
+#define CAN_CMD_MOTOR_STOP              0x0104 // Экстренная остановка
+
+// --- Группа 2: Fluidics (0x02xx) ---
+#define CAN_CMD_PUMP_RUN_DURATION       0x0201 // Запуск насоса на время (мс)
+#define CAN_CMD_PUMP_START              0x0202 // Включить насос (ON)
+#define CAN_CMD_PUMP_STOP               0x0203 // Выключить насос (OFF)
+#define CAN_CMD_VALVE_OPEN              0x0204 // Открыть клапан
+#define CAN_CMD_VALVE_CLOSE             0x0205 // Закрыть клапан
+
+// --- Группа 3: Thermo/Sensors (0x90xx) ---
+#define CAN_CMD_THERMO_GET_TEMP         0x9011 // Запрос температуры датчика
+#define CAN_CMD_THERMO_GET_ALL          0x9010 // Запрос данных со всех датчиков платы
+
+// --- Группа 4: Service & Maintenance (0xFxxx) ---
+#define CAN_CMD_SRV_GET_INFO            0xF001 // Запрос версии и типа платы
+#define CAN_CMD_SRV_REBOOT              0xF002 // Программная перезагрузка
+#define CAN_CMD_SRV_COMMIT              0xF003 // Сохранение RAM-настроек во Flash
+#define CAN_CMD_SRV_SET_NODE_ID         0xF005 // Изменение сетевого адреса (NodeID)
+#define CAN_CMD_SRV_FACTORY_RESET       0xF006 // Сброс к заводским установкам
+#define CAN_CMD_SRV_SCAN_1WIRE          0xF101 // Запуск сканирования шины 1-Wire
+
+// --- Защитные ключи (Magic Keys) ---
+#define SRV_MAGIC_REBOOT                0x55AA // Ключ для команды REBOOT
+#define SRV_MAGIC_FACTORY_RESET         0xDEAD // Ключ для команды FACTORY_RESET
+
+
+// ============================================================================
+// ---                 МАКРОСЫ ФОРМИРОВАНИЯ CAN ID                          ---
+// ============================================================================
+
+/**
+ * @brief Сборка 29-битного идентификатора кадра.
+ * Биты: [28-26] Приоритет | [25-24] Тип | [23-16] Dst | [15-8] Src
+ */
 #define CAN_BUILD_ID(priority, msg_type, dst_addr, src_addr) \
-	((uint32_t)(((priority) & 0x07) << 26) | \
-			(((msg_type) & 0x03) << 24) | \
-			(((dst_addr) & 0xFF) << 16) | \
-			(((src_addr) & 0xFF) << 8))
+    ((uint32_t)(((priority) & 0x07) << 26) | \
+                (((msg_type) & 0x03) << 24) | \
+                (((dst_addr) & 0xFF) << 16) | \
+                (((src_addr) & 0xFF) << 8))
 
-// Макросы извлечения полей из CAN ID
+/**
+ * @brief Извлечение полей из 29-битного ID (для входящих ответов)
+ */
 #define CAN_GET_PRIORITY(id)    ((uint8_t)(((id) >> 26) & 0x07))
 #define CAN_GET_MSG_TYPE(id)    ((uint8_t)(((id) >> 24) & 0x03))
 #define CAN_GET_DST_ADDR(id)    ((uint8_t)(((id) >> 16) & 0xFF))
 #define CAN_GET_SRC_ADDR(id)    ((uint8_t)(((id) >> 8)  & 0xFF))
 
-// ============================================================
-// Функции-упаковщики (Conductor → Executor)
-// ============================================================
 
-/** @brief CAN-кадр для MOTOR_ROTATE (0x0101). DLC=8. */
-void Packer_CreateRotateMotorMsg(uint8_t motor_id, int32_t steps, uint16_t speed,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// ============================================================================
+// ---               ПРОТОТИПЫ ФУНКЦИЙ УПАКОВЩИКА (Packer)                  ---
+// ---      Все функции гарантированно создают кадр с DLC=8 (Directive 2.0)  ---
+// ============================================================================
 
-/** @brief CAN-кадр для MOTOR_HOME (0x0102). DLC=5. */
-void Packer_CreateHomeMotorMsg(uint8_t motor_id, uint16_t speed,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// --- Секция Motion (Моторы 0-7) ---
+void Packer_CreateRotateMotorMsg(uint8_t ch_idx, int32_t steps, uint16_t speed, CAN_Message_t* out_msg);
+void Packer_CreateHomeMotorMsg(uint8_t ch_idx, uint16_t speed, CAN_Message_t* out_msg);
+void Packer_CreateStartContinuousMotorMsg(uint8_t ch_idx, uint16_t speed, CAN_Message_t* out_msg);
+void Packer_CreateStopMotorMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
 
-/** @brief CAN-кадр для MOTOR_START_CONTINUOUS (0x0103). DLC=4. */
-void Packer_CreateStartContinuousMotorMsg(uint8_t motor_id, uint8_t speed,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// --- Секция Fluidics (Насосы 0-12, Клапаны 13-15) ---
+void Packer_CreatePumpRunDurationMsg(uint8_t ch_idx, uint32_t duration_ms, CAN_Message_t* out_msg);
+void Packer_CreatePumpStartMsg(uint8_t ch_idx, uint32_t timeout_ms, CAN_Message_t* out_msg);
+void Packer_CreatePumpStopMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
+void Packer_CreateValveOpenMsg(uint8_t ch_idx, uint32_t timeout_ms, CAN_Message_t* out_msg);
+void Packer_CreateValveCloseMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
 
-/** @brief CAN-кадр для MOTOR_STOP (0x0104). DLC=3. */
-void Packer_CreateStopMotorMsg(uint8_t motor_id,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// --- Секция Thermo (Датчики 0-7) ---
+void Packer_CreateGetTempMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
+void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg);
 
-/** @brief CAN-кадр для PUMP_START (0x0202). DLC=3. */
-void Packer_CreateStartPumpMsg(uint8_t pump_id,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// --- Секция Service (Сервисные команды) ---
+void Packer_CreateRebootMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
+void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
 
-/** @brief CAN-кадр для PUMP_STOP (0x0203). DLC=3. */
-void Packer_CreateStopPumpMsg(uint8_t pump_id,
-		uint32_t job_id, CAN_Message_t* out_msg);
 
-/** @brief CAN-кадр для PHOTOMETER_SCAN (0x0401). DLC=4. */
-void Packer_CreatePerformScanMsg(uint8_t photometer_id, uint8_t wavelength_mask,
-		uint32_t job_id, CAN_Message_t* out_msg);
+// ============================================================================
+// ---              ПРОТОТИПЫ ФУНКЦИЙ РАСПАКОВЩИКА (Unpacker)               ---
+// ============================================================================
 
-// ============================================================
-// Функция-распаковщик (Executor → Conductor)
-// ============================================================
-
-/** @brief Распаковывает входящий CAN-кадр в CAN_Response_t.
-*  @return true если кадр успешно распакован, false если формат некорректен. */
+/**
+ * @brief Разбор входящего CAN-кадра от Исполнителя.
+ * Выполняет первичную проверку формата и заполняет структуру CAN_Response_t.
+ */
 bool Packer_ParseCanResponse(const CAN_Message_t* in_msg, CAN_Response_t* out_response);
 
 #endif /* INC_DISPATCHER_CAN_PACKER_H_ */
