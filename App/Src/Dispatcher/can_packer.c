@@ -46,6 +46,18 @@ static uint16_t unpack_u16_le(const uint8_t* src)
 }
 
 /**
+ * @brief Вспомогательная функция: Распаковка uint32_t из Little-Endian
+ */
+static uint32_t unpack_u32_le(const uint8_t* src)
+{
+	return (uint32_t)(src[0] |
+			((uint32_t)src[1] << 8) |
+			((uint32_t)src[2] << 16) |
+			((uint32_t)src[3] << 24));
+}
+
+
+/**
  * @brief Унифицированное заполнение Payload (Директива 2.0)
  * Структура [8 байт]: [0-1] CMD, [2] CH, [3-6] PARAM, [7] RSV
  */
@@ -172,58 +184,82 @@ void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
 // ---              РЕАЛИЗАЦИЯ ФУНКЦИЙ РАСПАКОВЩИКА (Unpacker)               ---
 // ============================================================================
 
+
+/**
+ * @brief Разбор входящего CAN-кадра от Исполнителя (Advanced Unified).
+ * Реализует логику "Директивы 2.0" для всех типов плат (Motion, Fluidic, Thermo).
+ */
+
 bool Packer_ParseCanResponse(const CAN_Message_t* in_msg, CAN_Response_t* out_response)
 {
-    if (in_msg == NULL || out_response == NULL) return false;
+	if (in_msg == NULL || out_response == NULL) return false;
 
-    memset(out_response, 0, sizeof(CAN_Response_t));
-    out_response->msg_type    = CAN_GET_MSG_TYPE(in_msg->id);
-    out_response->source_addr = CAN_GET_SRC_ADDR(in_msg->id);
+	// Сброс структуры перед заполнением
+	memset(out_response, 0, sizeof(CAN_Response_t));
 
-    switch (out_response->msg_type) {
-        case CAN_MSG_TYPE_ACK:
-        case CAN_MSG_TYPE_NACK:
-            if (in_msg->dlc < 4) return false;
-            out_response->command_code = unpack_u16_le(&in_msg->data[0]);
-            out_response->error_code   = unpack_u16_le(&in_msg->data[2]);
-            break;
+	// 1. Извлекаем метаданные из CAN ID
+	out_response->msg_type    = CAN_GET_MSG_TYPE(in_msg->id);
+	out_response->source_addr = CAN_GET_SRC_ADDR(in_msg->id);
 
-        case CAN_MSG_TYPE_DATA_DONE_LOG:
-            if (in_msg->dlc < 1) return false;
-            out_response->sub_type = in_msg->data[0];
+	// 2. Разбор Payload в зависимости от типа сообщения
+	switch (out_response->msg_type){
 
-            switch (out_response->sub_type) {
-                case CAN_SUB_TYPE_DONE:
-                    if (in_msg->dlc < 3) return false;
-                    out_response->command_code = unpack_u16_le(&in_msg->data[1]);
-                    // Индекс канала может быть в data[3] в некоторых прошивках
-                    if (in_msg->dlc >= 4) out_response->ch_idx = in_msg->data[3];
-                    break;
+		case CAN_MSG_TYPE_ACK:
+		case CAN_MSG_TYPE_NACK:
+			// Формат: [0-1] CMD, [2-3] ERROR
+			if (in_msg->dlc < 4) return false;
+			out_response->command_code = unpack_u16_le(&in_msg->data[0]);
+			out_response->error_code   = unpack_u16_le(&in_msg->data[2]);
+			break;
 
-                case CAN_SUB_TYPE_DATA:
-                    if (in_msg->dlc < 3) return false;
-                    out_response->ch_idx = in_msg->data[1]; // Байт 1: ch_idx
-                    out_response->data_len = in_msg->dlc - 2;
-                    for (uint8_t i = 0; i < out_response->data_len && i < 6; i++) {
-                        out_response->data[i] = in_msg->data[2 + i];
-                    }
-                    break;
+		case CAN_MSG_TYPE_DATA_DONE_LOG:
+			// Формат: [0] SUB_TYPE, [1-2] CMD, [3] CH_IDX, [4-7] PAYLOAD
+			if (in_msg->dlc < 1) return false;
+			out_response->sub_type = in_msg->data[0];
 
-                case CAN_SUB_TYPE_LOG:
-                    out_response->data_len = in_msg->dlc - 1;
-                    for (uint8_t i = 0; i < out_response->data_len && i < 7; i++) {
-                        out_response->data[i] = in_msg->data[1 + i];
-                    }
-                    break;
+			switch (out_response->sub_type) {
 
-                default:
-                    return false;
-            }
-            break;
+				case CAN_SUB_TYPE_DONE:
+					// Сигнал физического завершения (Моторы / Насосы)
+					if (in_msg->dlc < 4) return false;
+					out_response->command_code = unpack_u16_le(&in_msg->data[1]);
+					out_response->ch_idx       = in_msg->data[3];
+					break;
 
-        default:
-            return false;
-    }
+				case CAN_SUB_TYPE_DATA:
+					// Передача измерений (Термодатчики / Позиция моторов)
+					if (in_msg->dlc < 4) return false;
+					out_response->command_code = unpack_u16_le(&in_msg->data[1]);
+					out_response->ch_idx       = in_msg->data[3];
 
-    return true;
+					// Извлекаем 4 байта данных (если есть)
+					if (in_msg->dlc >= 8) {
+						out_response->payload.val32 = unpack_u32_le(&in_msg->data[4]);
+						out_response->data_len = 4;
+						}
+					else {
+						// Обработка коротких пакетов данных (например, 2 байта температуры)
+						out_response->data_len = in_msg->dlc - 4;
+						for (uint8_t i = 0; i < out_response->data_len; i++) {
+							out_response->payload.raw[i] = in_msg->data[4 + i];
+							}
+						}
+					break;
+
+				case CAN_SUB_TYPE_LOG:
+					// Отладочные сообщения от плат
+					out_response->data_len = (in_msg->dlc > 1) ? (in_msg->dlc - 1) : 0;
+					if (out_response->data_len > 7) out_response->data_len = 7;
+					memcpy(out_response->payload.log, &in_msg->data[1], out_response->data_len);
+					break;
+
+				default:
+					return false; // Неизвестный подтип
+					}
+				break;
+
+			default:
+				return false; // Неизвестный тип сообщения
+				}
+	return true;
 }

@@ -42,15 +42,21 @@ typedef struct {
  * Позволяет Диспетчеру (JobManager) принимать решения на основе типа ответа.
  */
 typedef struct {
-    uint8_t  msg_type;      // Тип: ACK, NACK или DATA_DONE_LOG
-    uint8_t  source_addr;   // От кого пришло (NodeID исполнителя)
-    uint16_t command_code;  // Код команды, на которую отвечает исполнитель
-    uint16_t error_code;    // Код ошибки (0 = OK, >0 = ошибка из реестра NACK)
-    uint8_t  sub_type;      // Подтип для DATA_DONE_LOG: 0x01=DONE, 0x02=DATA, 0x03=LOG
-    uint8_t  ch_idx;        // Индекс физического канала (из байта 1 ответа)
-    uint8_t  data[6];       // Сырые данные ответа (байты 2-7 payload)
-    uint8_t  data_len;      // Фактическая длина данных в массиве data
+	uint8_t  msg_type;      // Тип из CAN ID: ACK (1), NACK (2), DATA_DONE_LOG (3)
+    uint8_t  source_addr;   // NodeID отправителя (0x20, 0x30, 0x40)
+    uint16_t command_code;  // Код команды (из байт 0-1 или 1-2 payload)
+    uint16_t error_code;    // Код ошибки NACK (0 = OK)
+    uint8_t  sub_type;      // Подтип для типа 3: DONE (0x01), DATA (0x02), LOG (0x03)
+    uint8_t  ch_idx;        // Индекс физического канала (0-15)
+
+    union {
+    	uint8_t  raw[4];    // Сырые байты данных (для DATA)
+    	uint32_t val32;     // Универсальное 32-битное значение (для температуры, шагов и т.д.)
+    	char     log[7];    // Текстовое сообщение (для LOG)
+    	} payload;
+    	uint8_t  data_len;      // Длина полезных данных в payload
 } CAN_Response_t;
+
 
 
 // ============================================================================
@@ -113,6 +119,21 @@ typedef struct {
 // --- Защитные ключи (Magic Keys) ---
 #define SRV_MAGIC_REBOOT                0x55AA // Ключ для команды REBOOT
 #define SRV_MAGIC_FACTORY_RESET         0xDEAD // Ключ для команды FACTORY_RESET
+
+
+// ============================================================================
+// ---           РЕЕСТР ОШИБОК NACK (Error Registry - Stage 1.4)            ---
+// ---        Синхронизировано с экосистемой DDS-240 (Директива 2.0)         ---
+// ============================================================================
+#define CAN_NACK_OK                     0x0000 // Нет ошибки
+#define CAN_NACK_ERR_UNKNOWN_CMD        0x0001 // Неизвестная команда
+#define CAN_NACK_ERR_INVALID_CH         0x0002 // Неверный индекс канала
+#define CAN_NACK_ERR_DEVICE_FAILURE     0x0003 // Аппаратный сбой (сенсор/мотор)
+#define CAN_NACK_ERR_INVALID_KEY        0x0004 // Неверный Magic Key
+#define CAN_NACK_ERR_FLASH_WRITE        0x0005 // Ошибка записи во Flash
+#define CAN_NACK_ERR_INVALID_PARAM      0x0006 // Некорректный параметр/DLC
+#define CAN_NACK_ERR_BUSY               0x0007 // Устройство занято
+
 
 
 // ============================================================================
