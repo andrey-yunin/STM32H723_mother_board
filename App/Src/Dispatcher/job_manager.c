@@ -311,24 +311,79 @@ void JobManager_Run(void)
 				}
 
 			case CAN_MSG_TYPE_DATA_DONE_LOG:
-				if (response.sub_type == CAN_SUB_TYPE_DONE) {
-					// DONE = исполнитель завершил действие → продвигаем задание
-					for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
-						if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
-							JobManager_ProcessExecutorResponse(
-									g_active_jobs[i].job_id,
-									response.source_addr,
-									true);
-							break;
+				switch (response.sub_type) {
+
+					case CAN_SUB_TYPE_DONE:
+						// DONE = исполнитель завершил действие → продвигаем задание
+						for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
+							if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
+								JobManager_ProcessExecutorResponse(
+										g_active_jobs[i].job_id,
+										response.source_addr,
+										true);
+								break;
+								}
 							}
+						break;
+
+					case CAN_SUB_TYPE_DATA: {
+						// DATA = Активная трансляция форматов для Хоста (LE -> BE)
+						uint8_t host_data[16];
+						uint16_t host_len = 0;
+
+						// Внутренняя логика трансляции в зависимости от команды
+						if (response.command_code == 0x9011 || response.command_code == 0x8000) {
+
+							// Температура: [ID(1)][Temp_H(1)][Temp_L(1)][Status(1)]
+							host_data[0] = response.ch_idx;
+							host_data[1] = response.payload.raw[1]; // Temp MSB (от Исполнителя пришел LSB первым)
+							host_data[2] = response.payload.raw[0]; // Temp LSB
+							host_data[3] = (response.data_len >= 3) ? response.payload.raw[2] : 0x00;
+							host_len = 4;
+							}
+
+						else if (response.command_code == 0x1000) {
+							// Статус: [Status(1)][Err_H(1)][Err_L(1)]
+							host_data[0] = response.payload.raw[0];
+							host_data[1] = response.payload.raw[2]; // Error MSB
+							host_data[2] = response.payload.raw[1]; // Error LSB
+							host_len = 3;
+							}
+
+						else {
+							// Универсальный проброс с разворотом байт для числовых данных
+							host_data[0] = response.ch_idx;
+							for (int j = 0; j < response.data_len && j < 15; j++) {
+								host_data[j+1] = response.payload.raw[response.data_len - 1 - j];
+								}
+
+							host_len = response.data_len + 1;
+							}
+
+						// Отправка Хосту в бинарном формате CM> (Тип 0x03)
+						Dispatcher_SendData(response.command_code, 0x03, 0x0000, host_data, host_len);
+						break;
 						}
-					}
-				// DATA и LOG — пока игнорируем
+
+					case CAN_SUB_TYPE_LOG: {
+
+						// LOG = проброс текста в дебаг-консоль Дирижера
+						char log_msg[APP_USB_RESP_MAX_LEN];
+						snprintf(log_msg, sizeof(log_msg), "DEBUG: [0x%02X]: %s",
+								response.source_addr, response.payload.log);
+						Dispatcher_SendUsbResponse(log_msg);
+						break;
+						}
+
+					default:
+						// Неизвестный подтип — логируем для диагностики
+						break;
+						}
 				break;
 
-			default:
-				break;
-				}
+				default:
+					break;
+			}
 		}
 
 	// --- 2. Проверка таймаутов и обработка WAIT_MS (существующая логика) ---
