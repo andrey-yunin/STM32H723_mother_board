@@ -6,6 +6,7 @@
  */
 
 #include"task_dispatcher.h"
+#include "service_manager.h"
 #include "cmsis_os.h"
 #include "shared_resources.h"
 #include "app_config.h"
@@ -46,6 +47,12 @@ void app_start_task_dispatcher(void *argument)
 			{
 			g_system_state = SYS_STATE_INITIALIZING;
 			Dispatcher_SendUsbResponse("INFO: System starting. Initializing hardware...");
+			
+			// Инициализация и запуск Discovery перед первой операцией
+			ServiceManager_Init();
+			ServiceManager_StartDiscovery();
+			osDelay(100);
+
 			// Создаем универсальную команду для инициализации
 			UniversalCommand_t init_cmd;
 			init_cmd.recipe_id = RECIPE_INITIALIZE_SYSTEM;

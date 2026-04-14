@@ -54,3 +54,38 @@ DevicePhysAddr_t DeviceMapping_GetFluidicPhysAddr(uint8_t system_id)
     }
     return addr;
 }
+
+uint32_t DeviceMapping_GetRequiredNodesMask(uint8_t modules_mask) {
+	uint32_t nodes_mask = 0;
+
+	// Макрос для добавления NodeID в маску (0x20 -> бит 0, 0x21 -> бит 1)
+	#define ADD_TO_MASK(node) if((node) >= 0x20) { nodes_mask |= (1 << ((node) - 0x20)); }
+
+	// Проходим по битам функциональных модулей
+	if (modules_mask & (1 << 0)) { // МОДУЛЬ: Дозаторы
+
+		// Добавляем NodeID всех моторов, которые реально собраны в дозатор №1
+		ADD_TO_MASK(DeviceMapping_GetMotorPhysAddr(SYS_DISPENSER_MOTOR_XY).node_id);
+		ADD_TO_MASK(DeviceMapping_GetMotorPhysAddr(SYS_DISPENSER_MOTOR_Z).node_id);
+		ADD_TO_MASK(DeviceMapping_GetMotorPhysAddr(SYS_DISPENSER_MOTOR_SYRINGE).node_id);
+		}
+
+	if (modules_mask & (1 << 3)) { // МОДУЛЬ: Ротор Реагентов
+		ADD_TO_MASK(DeviceMapping_GetMotorPhysAddr(SYS_REAGENT_SAMPLE_DISK_MOTOR).node_id);
+		}
+
+	// Добавляйте остальные биты по мере реализации функционала
+	// ...
+
+	return nodes_mask;
+
+}
+
+
+
+
+
+
+
+
+

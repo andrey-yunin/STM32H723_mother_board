@@ -168,6 +168,39 @@ void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg)
 // ---               РЕАЛИЗАЦИЯ ФУНКЦИЙ УПАКОВЩИКА (Service)                ---
 // ============================================================================
 
+/**
+ * @brief Запрос информации об устройстве (Broadcast или Unicast)
+ *  Ответ: DATA с DeviceType, FW version.
+ *
+ */
+void Packer_CreateGetInfoMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
+{
+	packer_init_header(out_msg, dst_addr);
+    packer_fill_payload(out_msg, CAN_CMD_SRV_GET_INFO, 0, 0);
+}
+
+/**
+ * @brief Запрос уникального ID чипа (UID)
+ * Используется для паспортизации узлов.
+ */
+void Packer_CreateGetUidMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
+{
+	packer_init_header(out_msg, dst_addr);
+    packer_fill_payload(out_msg, 0xF004, 0, 0); // Код 0xF004 по стандарту
+}
+
+/**
+ * @brief Принудительная установка NodeID
+ */
+void Packer_CreateSetNodeIdMsg(uint8_t dst_addr, uint8_t new_node_id, CAN_Message_t* out_msg)
+{
+	packer_init_header(out_msg, dst_addr);
+    // Новое ID передается в байте 2 (ch_idx) или как параметр.
+    // По Директиве 2.0: в байте 2 (ch_idx).
+    packer_fill_payload(out_msg, CAN_CMD_SRV_SET_NODE_ID, new_node_id, 0);
+}
+
+
 void Packer_CreateRebootMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
 {
     packer_init_header(out_msg, dst_addr);
@@ -180,10 +213,10 @@ void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
     packer_fill_payload(out_msg, CAN_CMD_SRV_FACTORY_RESET, 0, SRV_MAGIC_FACTORY_RESET);
 }
 
+
 // ============================================================================
 // ---              РЕАЛИЗАЦИЯ ФУНКЦИЙ РАСПАКОВЩИКА (Unpacker)               ---
 // ============================================================================
-
 
 /**
  * @brief Разбор входящего CAN-кадра от Исполнителя (Advanced Unified).

@@ -182,8 +182,12 @@ void Packer_CreateGetTempMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
 void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg);
 
 // --- Секция Service (Сервисные команды) ---
+void Packer_CreateGetInfoMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
+void Packer_CreateGetUidMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
+void Packer_CreateSetNodeIdMsg(uint8_t dst_addr, uint8_t new_node_id, CAN_Message_t* out_msg);
 void Packer_CreateRebootMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
 void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
+
 
 
 // ============================================================================

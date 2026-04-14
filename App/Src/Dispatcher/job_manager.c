@@ -10,6 +10,7 @@
 #include "Dispatcher/can_packer.h"
 #include "Dispatcher/device_mapping.h"
 #include "Dispatcher/system_mapping.h"
+#include "Dispatcher/service_manager.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
@@ -41,7 +42,18 @@ void JobManager_Init(void)
 
 uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 {
+	if (parsed_cmd->command_code == 0x1002) { // Если это INIT
+		uint8_t mask = (parsed_cmd->args_type == ARGS_TYPE_PARSED) ? parsed_cmd->args.init.modules_mask : 0xFF;
+		if (!ServiceManager_CheckInventory(mask)) {
+			Dispatcher_SendError(parsed_cmd->command_code, 0x0005);
+			Dispatcher_SendUsbResponse("ERROR: Required CAN nodes for this module are OFFLINE.");
+			return 0; // Блокируем запуск задания
+			}
+	}
+
+
 	JobContext_t* job = JobManager_FindFreeSlot();
+
     if (job == NULL) {
     	Dispatcher_SendUsbResponse("ERROR: No free job slots to start new job.");
         return 0;
@@ -314,6 +326,11 @@ void JobManager_Run(void)
 				switch (response.sub_type) {
 
 					case CAN_SUB_TYPE_DONE:
+
+						if (response.command_code == CAN_CMD_SRV_GET_INFO) {
+							ServiceManager_UpdateNode(&response);
+							}
+
 						// DONE = исполнитель завершил действие → продвигаем задание
 						for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 							if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
@@ -330,6 +347,7 @@ void JobManager_Run(void)
 						// DATA = Активная трансляция форматов для Хоста (LE -> BE)
 						uint8_t host_data[16];
 						uint16_t host_len = 0;
+
 
 						// Внутренняя логика трансляции в зависимости от команды
 						if (response.command_code == 0x9011 || response.command_code == 0x8000) {
@@ -349,6 +367,8 @@ void JobManager_Run(void)
 							host_data[2] = response.payload.raw[1]; // Error LSB
 							host_len = 3;
 							}
+
+
 
 						else {
 							// Универсальный проброс с разворотом байт для числовых данных
