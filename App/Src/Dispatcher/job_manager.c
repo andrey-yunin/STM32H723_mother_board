@@ -56,6 +56,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 
     if (job == NULL) {
     	Dispatcher_SendUsbResponse("ERROR: No free job slots to start new job.");
+        Dispatcher_SendError(parsed_cmd->command_code, 0x0004); // ERR_BUSY / SYSTEM_BUSY
         return 0;
     }
 

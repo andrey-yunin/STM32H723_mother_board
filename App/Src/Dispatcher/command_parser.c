@@ -351,9 +351,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     			}
 
     		// Start JobManager to execute the recipe
-    		if (JobManager_StartNewJob(&cmd) == 0) {
-    			Dispatcher_SendError(command_code, 0x0004); // ERR_JOB_FAILED_TO_START
-    			}
+    		JobManager_StartNewJob(&cmd);
     		return; // Command processed, exit function
     		}
      }
