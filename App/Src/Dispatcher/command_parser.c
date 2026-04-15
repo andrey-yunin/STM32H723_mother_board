@@ -13,19 +13,52 @@
 
         //INIT descriptor:
 const RecipeCommandDescriptor_t recipe_command_table[] = {
+
+
+		// --- Системные ---
+
 		{.command_code = 0x1002, // Код команды INIT
-		 .min_params_len = 1,
-		 .max_params_len = 1,
-		 .recipe_id = RECIPE_INITIALIZE_SYSTEM // ID рецепта INIT
+				.min_params_len = 1,
+				.max_params_len = 1,
+				.recipe_id = RECIPE_INITIALIZE_SYSTEM // ID рецепта INIT
 		 },
+
+
+		 // --- Дозатор (0x20xx) ---
 
 		 //DISPENSER_WASH descriptor:
 		 {.command_code = 0x2000, // Код команды DISPENSER_WASH
-		  .min_params_len = 4,   // dispenser_id (1) + volume (2) + cycles (1) = 4 байта
-		  .max_params_len = 4,   //
-		  .recipe_id = RECIPE_DISPENSER_WASH // ID рецепта DISPENSER_WASH
+				 .min_params_len = 4,   // dispenser_id (1) + volume (2) + cycles (1) = 4 байта
+				 .max_params_len = 4,   //
+				 .recipe_id = RECIPE_DISPENSER_WASH // ID рецепта DISPENSER_WASH
 		 },
 
+		 // DISPENSER_ASPIRATE descriptor: added 11/02/2026
+		 {.command_code = 0x2100, // Код команды DISPENSER_ASPIRATE
+				 .min_params_len = 6,   // dispenser_id (1) + source (1) + position (2) + volume (2) = 6 байт
+		 		 .max_params_len = 6,
+				 .recipe_id = RECIPE_DISPENSER_ASPIRATE
+				 },
+
+		 // DISPENSER_DISPENSE descriptor: <-- added 13/02/2026
+		 {.command_code = 0x2200, // Код команды DISPENSER_DISPENSE
+				 .min_params_len = 6,   // dispenser_id (1) + target (1) + slot (2) + volume (2) = 6 байт
+				 .max_params_len = 6,
+				 .recipe_id = RECIPE_DISPENSER_DISPENSE
+				 },
+
+
+		 // --- Миксер (0x30xx) ---
+
+		 // MIXER_MIX descriptor: <-- added 13/02/2026
+		 {.command_code = 0x3100, // Код команды MIXER_MIX
+				 .min_params_len = 6,   // mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 байт
+				 .max_params_len = 6,
+				 .recipe_id = RECIPE_MIXER_MIX
+				 },
+
+
+		// --- Моющая станция (0x40xx) ---
 
 		 // WASH_STATION_WASH descriptor: added 05/02/2026
 		 {.command_code = 0x4000, // Код команды WASH_STATION_WASH
@@ -34,26 +67,15 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				 .recipe_id = RECIPE_WASH_STATION_WASH
 				 },
 
-		// SAMPLE_ROTATE descriptor: added 11/02/2026
-		{.command_code = 0x5110, // Код команды SAMPLE_ROTATE
-				.min_params_len = 2,   // slot (2 байта)
-				.max_params_len = 2,
-				.recipe_id = RECIPE_SAMPLE_ROTATE
-				},
+		 // WASH_STATION_FILL descriptor: <-- added 17/02/2026
+		 {.command_code = 0x4100, // Код команды WASH_STATION_FILL
+				 .min_params_len = 4,   // cuvette (2) + volume (2) = 4 байта
+				 .max_params_len = 4,
+				 .recipe_id = RECIPE_WASH_STATION_FILL
+				 },
 
-		// DISPENSER_ASPIRATE descriptor: added 11/02/2026
-		{.command_code = 0x2100, // Код команды DISPENSER_ASPIRATE
-				.min_params_len = 6,   // dispenser_id (1) + source (1) + position (2) + volume (2) = 6 байт
-				.max_params_len = 6,
-				.recipe_id = RECIPE_DISPENSER_ASPIRATE
-				},
 
-		// DISPENSER_DISPENSE descriptor: <-- added 13/02/2026
-		{.command_code = 0x2200, // Код команды DISPENSER_DISPENSE
-				.min_params_len = 6,   // dispenser_id (1) + target (1) + slot (2) + volume (2) = 6 байт
-				.max_params_len = 6,
-				.recipe_id = RECIPE_DISPENSER_DISPENSE
-				},
+		// --- Роторы и Диски (0x50xx) ---
 
 		// REAGENT_ROTATE descriptor: <-- added 13/02/2026
 		{.command_code = 0x5000, // Код команды REAGENT_ROTATE
@@ -62,12 +84,13 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 				.recipe_id = RECIPE_REAGENT_ROTATE
 				},
 
-		 // MIXER_MIX descriptor: <-- added 13/02/2026
-		{.command_code = 0x3100, // Код команды MIXER_MIX
-				.min_params_len = 6,   // mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 байт
-				.max_params_len = 6,
-				.recipe_id = RECIPE_MIXER_MIX
-				},
+		{.command_code = 0x5110,
+				.min_params_len = 2,
+				.max_params_len = 2,
+				.recipe_id = RECIPE_SAMPLE_ROTATE },
+
+
+		// --- Фотометр (0x60xx) ---
 
 		// PHOTOMETER_SCAN_SINGLE descriptor: <-- added 13/02/2026
 		{.command_code = 0x6100, // Код команды PHOTOMETER_SCAN_SINGLE
@@ -76,18 +99,9 @@ const RecipeCommandDescriptor_t recipe_command_table[] = {
 			.recipe_id = RECIPE_PHOTOMETER_SCAN_SINGLE
 			},
 
-		// WASH_STATION_FILL descriptor: <-- added 17/02/2026
-		{.command_code = 0x4100, // Код команды WASH_STATION_FILL
-			.min_params_len = 4,   // cuvette (2) + volume (2) = 4 байта
-			.max_params_len = 4,
-			.recipe_id = RECIPE_WASH_STATION_FILL
-			},
-
-
-
 		 // Здесь будут добавляться другие команды-рецепты
 
-		 };
+	};
 
 // Определяем количество команд в таблице
 const uint16_t RECIPE_COMMAND_TABLE_SIZE = sizeof(recipe_command_table) / sizeof(RecipeCommandDescriptor_t);
@@ -105,8 +119,7 @@ const uint16_t RECIPE_COMMAND_TABLE_SIZE = sizeof(recipe_command_table) / sizeof
 
 // Таблица дескрипторов для прямых команд
 const DirectCommandDescriptor_t direct_command_table[] = {
-		{
-				.command_code = 0x1000, // Код команды GET_STATUS
+		{.command_code = 0x1000, // Код команды GET_STATUS
 				.min_params_len = 0,
 				.max_params_len = 0,
 				.handler = handle_get_status // Указатель на наш обработчик
@@ -114,7 +127,36 @@ const DirectCommandDescriptor_t direct_command_table[] = {
 
 	   // Здесь будут добавляться другие прямые команды
 
-				};
+    	// 0x1003 - Запрос версии прошивки
+		{
+				.command_code = 0x1003,
+				.min_params_len = 0,
+				.max_params_len = 0,
+				.handler = handle_get_version
+				},
+
+		// 0x1010 - Аварийная остановка всех механизмов (Мгновенное действие)
+		{.command_code = 0x1010,
+				.min_params_len = 0,
+				.max_params_len = 0,
+				.handler = handle_emergency_stop
+				},
+
+		// 0x1005 - Команда для работы с временем (согласно commands.md)
+		{ .command_code = 0x1005,
+				.min_params_len = 0,
+				.max_params_len = 0,
+				.handler = handle_get_datetime
+				},
+
+
+		// 0x8000 - Запрос текущей температуры термостата (Прямой опрос без рецепта)
+		{.command_code = 0x8000,
+				.min_params_len = 1,
+				.max_params_len = 1,
+				.handler = handle_thermo_get_temp
+				},
+		};
 
 // Определяем количество команд в таблице
 const uint16_t DIRECT_COMMAND_TABLE_SIZE = sizeof(direct_command_table) / sizeof(DirectCommandDescriptor_t);

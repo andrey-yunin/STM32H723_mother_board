@@ -27,16 +27,28 @@ typedef struct {
  */
 DevicePhysAddr_t DeviceMapping_GetMotorPhysAddr(uint8_t system_id);
 
+
 /**
  * @brief Трансляция Системного ID помпы в физический адрес
  */
 DevicePhysAddr_t DeviceMapping_GetFluidicPhysAddr(uint8_t system_id);
+
+
+/**
+ * @brief Трансляция Системного ID сенсора/термостата в физический адрес
+ */
+DevicePhysAddr_t DeviceMapping_GetThermoPhysAddr(uint8_t system_id);
+
+
 
 /**
  * @brief Возвращает битовую маску необходимых плат (NodeID) для выбранных модулей.
  * Бит 0 соответствует NodeID 0x20, бит 1 -> 0x21 и т.д.
  */
 uint32_t DeviceMapping_GetRequiredNodesMask(uint8_t modules_mask);
+
+
+
 
 
 #endif /* INC_DISPATCHER_DEVICE_MAPPING_H_ */

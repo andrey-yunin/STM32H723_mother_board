@@ -82,6 +82,29 @@ uint32_t DeviceMapping_GetRequiredNodesMask(uint8_t modules_mask) {
 }
 
 
+/**
+ * @brief Маппинг ТЕРМОСТАТОВ на плату Thermo (Node 0x40)
+ */
+DevicePhysAddr_t DeviceMapping_GetThermoPhysAddr(uint8_t system_id)
+{
+	DevicePhysAddr_t addr = {CAN_ADDR_THERMO_BOARD, 0, true};
+
+	switch (system_id) {
+		case 1: addr.ch_idx = 0; break; // Реакционный диск
+		case 2: addr.ch_idx = 1; break; // Ротор реагентов #1
+		case 3: addr.ch_idx = 2; break; // Ротор реагентов #2
+		case 4: addr.ch_idx = 3; break; // Диск образцов
+		default:
+			addr.is_valid = false;
+			break;
+			}
+	return addr;
+}
+
+
+
+
+
 
 
 
