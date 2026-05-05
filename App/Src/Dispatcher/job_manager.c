@@ -6,6 +6,8 @@
  */
 
 #include "Dispatcher/job_manager.h"
+#include "Dispatcher/param_translator.h"
+#include "Dispatcher/calibrator.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/can_packer.h"
 #include "Dispatcher/device_mapping.h"
@@ -250,7 +252,7 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 			return job->initial_cmd.args.dispenser_wash.steps_up;
 
 		case PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS: // added 17/02/2026 New for WASH_STATION_FILL
-			return job->initial_cmd.args.wash_station_fill.rotate_steps;
+			return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_fill.cuvette);
 
 		case PARAM_SOURCE_CMD_DISPENSER_WASH_SYRINGE_STEPS: //added 04.03/2026
 			return job->initial_cmd.args.dispenser_wash.syringe_steps;
@@ -274,16 +276,23 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 		switch (source) {
 			// case PARAM_SOURCE_CMD_DISPENSER_VOLUME: // This old source is removed
 				// return job->initial_cmd.args.dispenser_wash.volume;
+		case PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS: {
+			uint32_t duration_ms = 0;
+			if (!Calibrator_PumpVolumeToDurationMs(SYS_WASH_PUMP_FILL,
+					job->initial_cmd.args.wash_station_fill.volume_ul,
+					CAL_PUMP_OP_FILL,
+					&duration_ms)) {
+				return 0;
+				}
+			return duration_ms;
+			}
 
-			case PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS: // added 17/02/2026 New for WASH_STATION_FILL
-				return job->initial_cmd.args.wash_station_fill.pump_duration_ms;
-
-				// Add other uint32_t sources here as needed
-				// For example:
-				// case PARAM_SOURCE_CMD_WAIT_DELAY: return job->initial_cmd.args.wait.delay_ms;
-				default:
-					break; // Fall through to static_value
-					}
+		// Add other uint32_t sources here as needed
+		// For example:
+		// case PARAM_SOURCE_CMD_WAIT_DELAY: return job->initial_cmd.args.wait.delay_ms;
+		default:
+			break; // Fall through to static_value
+			}
 		}
 	return static_value;
 }

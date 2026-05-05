@@ -166,3 +166,99 @@
 
 ### 11.3. Готовность к интеграции
 Система имеет "законченные очертания". Ядро Дирижера полностью автономно, защищено от некорректных команд и готово к управлению всей периферией анализатора.
+
+---
+
+## 12. Ревизия 2.0 (22 апреля 2026 г.): CANable E2E стенд без реальных исполнителей
+**Статус:** ВАЛИДИРОВАНО НА РЕАЛЬНОЙ CAN-ШИНЕ С FAKE EXECUTORS
+
+### 12.1. Контекст стенда
+Проведен аппаратный тест связки:
+
+```text
+Host USB test -> Conductor STM32H723 -> FDCAN -> CANable/SocketCAN -> fake executors -> Conductor -> Host
+```
+
+На момент теста реальные Executor-платы в CAN-сети отсутствовали. Роль исполнителей выполнял CANable через `App_user/can_test.py --can-only-responder`, который слушает `candump` и отправляет ответы `ACK/DONE` через `cansend`.
+
+В ходе подготовки обнаружена физическая ошибка подключения пинов CAN на МК. После исправления пинов Дирижер начал штатно передавать кадры в шину.
+
+### 12.2. Подтвержденные CAN-кадры
+После перезагрузки Дирижера подтвержден broadcast discovery:
+
+```text
+00001000#01F0000000000000  SRV_GET_INFO, Dst=0x00, Src=0x10
+```
+
+Подтверждены команды Motion `0x20`:
+
+```text
+00201000#0201019600000000  MOTOR_HOME ch=1
+00201000#0201009001000000  MOTOR_HOME ch=0
+00201000#0101........      MOTOR_ROTATE ch=0..7
+00201000#0301070000000000  MOTOR_START_CONTINUOUS ch=7
+00201000#0401070000000000  MOTOR_STOP ch=7
+```
+
+Подтверждены команды Fluidics `0x30`:
+
+```text
+00301000#02020A0000000000  PUMP_START ch=10
+00301000#03020A0000000000  PUMP_STOP  ch=10
+00301000#02020B0000000000  PUMP_START ch=11
+00301000#03020B0000000000  PUMP_STOP  ch=11
+```
+
+Fake executors отвечали стандартными кадрами:
+
+```text
+05102000 / 07102000  Motion ACK/DONE
+05103000 / 07103000  Fluidics ACK/DONE
+```
+
+### 12.3. Результат USB Host-level регрессии
+С запущенным CAN responder выполнен `python3 test_main_processes.py`.
+
+Подтвержден успешный high-level parsing и E2E lifecycle для команд:
+
+| Команда Host | Код | Итог |
+|:---|:---:|:---:|
+| INIT | `0x1002` | PASS |
+| GET_STATUS | `0x1000` | PASS, `state=0x02`, `last_error=0x0000` |
+| SAMPLE_ROTATE | `0x5110` | PASS |
+| DISPENSER_ASPIRATE | `0x2100` | PASS |
+| DISPENSER_DISPENSE | `0x2200` | PASS |
+| REAGENT_ROTATE | `0x5000` | PASS |
+| MIXER_MIX | `0x3100` | PASS |
+| PHOTOMETER_SCAN_SINGLE | `0x6100` | PASS |
+| DISPENSER_WASH | `0x2000` | PASS |
+| WASH_STATION_FILL | `0x4100` | PASS |
+| WASH_STATION_WASH | `0x4000` | PASS |
+
+Итог теста:
+
+```text
+На данный момент все реализованные шаги цикла анализа пройдены успешно.
+```
+
+### 12.4. Что именно подтверждено
+- USB CDC канал стабилен.
+- Парсер `CM>` принимает high-level команды Хоста, проверяет CRC/длину/параметры и запускает нужные рецепты.
+- `JobManager` корректно раскладывает рецепты в атомарные действия.
+- `DeviceMapping` корректно переводит системные роли в физические пары `(NodeID, ch_idx)` для Motion и Fluidics.
+- FDCAN TX Дирижера формирует 29-bit Extended ID и strict DLC=8.
+- FDCAN RX Дирижера принимает `ACK/DONE` от CANable и продвигает активный Job.
+- Mixed steps с локальным `WAIT_MS` и CAN-действиями проходят: `START_PUMP + WAIT_MS -> STOP_PUMP`.
+- `GET_STATUS` после INIT возвращает `System State = 0x02` и `Last Error = 0x0000`.
+
+### 12.5. Ограничения текущей проверки
+- Реальная механика и доменная логика Executor-плат не проверялись: Motion/Fluidics были эмулированы CANable.
+- DATA-путь с измерениями, включая Thermo/Warm Finger и Big-Endian упаковку в Host DATA, остается открытым.
+- Реальный `GET_STATUS (0xF007)` Executor-плат и baseline/delta диагностика Conductor еще не закрыты.
+- В `test_main_processes.py` остались устаревшие ожидания текстовых логов вида `ID:...`; текущая прошивка логирует `Phys:<node>:<channel>`. Это дает предупреждения, но не влияет на PASS.
+
+### 12.6. Следующая фаза
+Следующая работа должна идти в двух направлениях:
+
+1. **Доведение Conductor до стандарта DDS-240:** сверка с `dds240_global_config.h`, service-команды `0xF001..0xF007`, UID, `GET_STATUS` метрики, recovery policy.
+2. **Регрессия с реальными исполнителями:** сначала Fluidics `0x30`, затем Motion `0x20`, затем Thermo `0x40` с DATA/temperature path.

@@ -73,6 +73,9 @@ typedef struct {
 #define CAN_MSG_TYPE_NACK           2   // Ошибка приема/параметров (Error)
 #define CAN_MSG_TYPE_DATA_DONE_LOG  3   // Событийный обмен (Data, Done, Log)
 
+// --- Размер полезной нагрузки (Directive 2.0) ---
+#define CAN_PAYLOAD_SIZE            8   // Фиксированный размер кадра для всех команд и ответов
+
 // --- Подтипы для типа DATA_DONE_LOG (байт 0 payload) ---
 #define CAN_SUB_TYPE_DONE           0x01 // Физическое завершение действия
 #define CAN_SUB_TYPE_DATA           0x02 // Результат измерения (напр. Температура)

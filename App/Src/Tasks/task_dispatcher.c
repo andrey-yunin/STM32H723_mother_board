@@ -50,8 +50,10 @@ void app_start_task_dispatcher(void *argument)
 			
 			// Инициализация и запуск Discovery перед первой операцией
 			ServiceManager_Init();
-			ServiceManager_StartDiscovery();
-			osDelay(100);
+			for (uint8_t i = 0; i < 5; i++) {
+				ServiceManager_StartDiscovery();
+				osDelay(250);
+			}
 
 			// Создаем универсальную команду для инициализации
 			UniversalCommand_t init_cmd;
@@ -170,7 +172,6 @@ SystemState_t GetSystemState(void)
 {
 	return g_system_state;
 }
-
 
 
 

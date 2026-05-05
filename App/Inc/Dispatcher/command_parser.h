@@ -109,10 +109,9 @@ typedef struct {
  * @brief Разобранные параметры для команды WASH_STATION_FILL (0x4100).
  */
 typedef struct {
-	uint32_t pump_duration_ms; // Рассчитанная длительность работы насоса в мс
-	int32_t rotate_steps;      // Рассчитанные шаги для поворота реакционного диска
-	} ParsedArgs_WashStationFill;
-
+	uint16_t volume_ul;  // Host API: volume first
+  	uint16_t cuvette;    // Host API: cuvette second
+} ParsedArgs_WashStationFill;
 
 
 
