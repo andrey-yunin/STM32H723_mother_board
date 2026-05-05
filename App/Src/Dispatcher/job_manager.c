@@ -541,6 +541,50 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 break;
             }
 
+            case ACTION_RUN_PUMP_DURATION: {
+              	uint8_t sys_id = JobManager_GetUint8Param(job,
+              			action->params.pump_duration.pump_id_source,
+              			action->params.pump_duration.pump_id);
+
+              	uint32_t duration_ms = JobManager_GetUint32Param(job,
+              			action->params.pump_duration.duration_ms_source,
+              			action->params.pump_duration.duration_ms);
+
+              	if (duration_ms == 0) {
+              		snprintf(info_msg, sizeof(info_msg),
+              				"ERROR: Job #%lu: Invalid pump duration for SysID %u",
+              				(unsigned long)job->job_id, sys_id);
+              		Dispatcher_SendUsbResponse(info_msg);
+              		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+              		return;
+              	}
+
+              	phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
+              	if (!phys_addr.is_valid) {
+              		snprintf(info_msg, sizeof(info_msg),
+              				"ERROR: Job #%lu: Invalid Pump SysID %u",
+              				(unsigned long)job->job_id, sys_id);
+              		Dispatcher_SendUsbResponse(info_msg);
+              		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+              		return;
+              	}
+
+              	snprintf(info_msg, sizeof(info_msg),
+              			"DEBUG: Job #%lu: Sent RUN_PUMP_DURATION (Phys:%u:%u, Duration:%lu)",
+              			(unsigned long)job->job_id,
+              			phys_addr.node_id,
+              			phys_addr.ch_idx,
+              			(unsigned long)duration_ms);
+              	Dispatcher_SendUsbResponse(info_msg);
+
+              	Packer_CreatePumpRunDurationMsg(phys_addr.ch_idx, duration_ms, &can_msg);
+              	can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND,
+              			phys_addr.node_id, CAN_ADDR_CONDUCTOR);
+              	xQueueSend(can_tx_queue_handle, &can_msg, 0);
+              	break;
+              }
+
+
             case ACTION_START_PUMP: {
             	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.pump.pump_id_source, action->params.pump.pump_id);
                 phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);

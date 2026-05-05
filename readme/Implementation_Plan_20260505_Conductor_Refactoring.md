@@ -199,26 +199,26 @@ PUMP_START -> WAIT_MS(duration_ms) -> PUMP_STOP
 PUMP_RUN_DURATION(ch_idx, duration_ms)
 ```
 
-- [ ] Добавить `ACTION_RUN_PUMP_DURATION` в `recipe_store.h`.
-- [ ] Добавить параметры action:
-  - `[ ]` `pump_id`
-  - `[ ]` `pump_id_source`
-  - `[ ]` `duration_ms`
-  - `[ ]` `duration_ms_source`
-- [ ] Добавить обработку action в `JobManager_ExecuteStep`.
-- [ ] Использовать `Packer_CreatePumpRunDurationMsg`.
-- [ ] Не отправлять команду, если `duration_ms == 0`.
-- [ ] При `duration_ms == 0` завершать Host/job ошибкой параметров.
-- [ ] Заменить `WASH_STATION_FILL` на один `ACTION_RUN_PUMP_DURATION`.
+- [x] Добавить `ACTION_RUN_PUMP_DURATION` в `recipe_store.h`.
+- [x] Добавить параметры action:
+  - `[x]` `pump_id`
+  - `[x]` `pump_id_source`
+  - `[x]` `duration_ms`
+  - `[x]` `duration_ms_source`
+- [x] Добавить обработку action в `JobManager_ExecuteStep`.
+- [x] Использовать `Packer_CreatePumpRunDurationMsg`.
+- [x] Не отправлять команду, если `duration_ms == 0`.
+- [x] При `duration_ms == 0` завершать Host/job ошибкой параметров.
+- [x] Заменить `WASH_STATION_FILL` на один `ACTION_RUN_PUMP_DURATION`.
 - [ ] Заменить дозирующие шаги `WASH_STATION_WASH`.
-- [ ] Оставить `ACTION_START_PUMP` и `ACTION_STOP_PUMP` для manual/service flows.
+- [x] Оставить `ACTION_START_PUMP` и `ACTION_STOP_PUMP` для manual/service flows.
 
 **Приемка:**
 
-- [ ] `WASH_STATION_FILL` формирует CAN `0x0201 PUMP_RUN_DURATION`.
-- [ ] Для `WASH_STATION_FILL` не формируются `0x0202 PUMP_START` и `0x0203 PUMP_STOP`.
-- [ ] `WAIT_MS` не используется как основной механизм дозирования насосом.
-- [ ] Executor `DONE` по `PUMP_RUN_DURATION` продвигает только один atomic step.
+- [x] `WASH_STATION_FILL` формирует CAN `0x0201 PUMP_RUN_DURATION`.
+- [x] Для `WASH_STATION_FILL` не формируются `0x0202 PUMP_START` и `0x0203 PUMP_STOP`.
+- [x] `WAIT_MS` не используется как основной механизм дозирования насосом.
+- [x] Executor `DONE` по `PUMP_RUN_DURATION` продвигает только один atomic step.
 
 ## 7. Этап D: timeout model для atomic actions
 
@@ -374,3 +374,4 @@ source_addr, command_code, ch_idx
 | 2026-05-05 | `[x]` | Инженер развел parser boundary для `WASH_STATION_FILL`: parser хранит `volume_ul/cuvette`, без расчета `pump_duration_ms`. |
 | 2026-05-05 | `[x]` | Инженер добавил минимальный calibrator и перенес расчет `cuvette -> steps`, `volume_ul -> duration_ms` из parser-а в job/translator/calibrator boundary. |
 | 2026-05-05 | `[x]` | Контрольная сборка после parser/calibrator boundary проходит. |
+| 2026-05-05 | `[x]` | `WASH_STATION_FILL` переведен на finite action `ACTION_RUN_PUMP_DURATION`; сборка проходит, размер ELF: text 80904, data 348, bss 46412. |

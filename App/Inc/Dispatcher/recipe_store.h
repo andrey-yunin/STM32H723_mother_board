@@ -96,8 +96,9 @@
  typedef enum {
      ACTION_NONE = 0,        // Маркер конца рецепта, "Ничего не делать"
      ACTION_ROTATE_MOTOR,    // Вращать мотор на N шагов
-     ACTION_START_PUMP,      // Включить насос
-     ACTION_STOP_PUMP,       // Выключить насос
+	 ACTION_RUN_PUMP_DURATION, // Recipe dosing: finite Fluidics command
+     ACTION_START_PUMP,      // Включить насос Service/manual only
+     ACTION_STOP_PUMP,       // Выключить насос // Service/manual/emergency only
      ACTION_WAIT_MS,         // Подождать N миллисекунд
      ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
 	 ACTION_START_MIXING_MOTOR, // <-- НОВОЕ ДЕЙСТВИЕ: Включить мотор перемешивания added 13/02/2026
@@ -164,6 +165,14 @@
         	  uint8_t wavelength_mask;       // Маска длин волн
         	  ParamSource_t wavelength_mask_source;
         	  } perform_scan;
+
+           struct {
+        		uint8_t pump_id;
+        	    ParamSource_t pump_id_source;
+        	    uint32_t duration_ms;
+        	    ParamSource_t duration_ms_source;
+        	    } pump_duration;
+
      } params;
  } AtomicAction_t; //
 
