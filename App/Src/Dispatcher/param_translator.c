@@ -130,15 +130,15 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	 }
 
 
- /**
-  * @brief Преобразует номер кюветы в шаги мотора для поворота миксера.
+/**
+  * @brief Преобразует номер кюветы в шаги XY-оси миксера.
   */
- int32_t ParamTranslator_MixerCuvetteToRotationSteps(uint16_t cuvette_number)
+ int32_t ParamTranslator_MixerCuvetteToXYSteps(uint16_t cuvette_number)
  {
 	 // TODO: Реализовать логику трансляции в зависимости от cuvette_number.
      // Пока - простая заглушка.
      if (cuvette_number == 0) return 0;
-     return (int32_t)cuvette_number * MIXER_ROT_STEPS_PER_CUVETTE;
+     return (int32_t)cuvette_number * MIXER_XY_STEPS_PER_CUVETTE;
      }
 
   /**
@@ -161,21 +161,9 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 	  return MIXER_Z_STEPS_UP; // Возвращаем отрицательное значение для движения вверх
 	  }
 
-  /**
-   * @brief Преобразует номер кюветы в шаги мотора для позиционирования фотометра.
-   */
-  int32_t ParamTranslator_PhotometerCuvetteToSteps(uint16_t cuvette_number)
-  {
-	  // TODO: Реализовать более сложную логику, учитывающую калибровку,
-	  // начальное положение и т.д. Пока - простая заглушка.
-	  if (cuvette_number == 0) return 0; // Или вернуть ошибку
-	  return (int32_t)cuvette_number * PHOTOMETER_STEPS_PER_CUVETTE;
-	  }
-
-
- /**
-  * @brief Реализация ParamTranslator_DispenserWashRotateSteps.
-  */
+	 /**
+	  * @brief Реализация ParamTranslator_DispenserWashRotateSteps.
+	  */
  int32_t ParamTranslator_DispenserWashRotateSteps(void)
  {
 	 return DISPENSER_ROT_STEPS_TO_WASH_STATION;
@@ -222,6 +210,4 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number) {
 
 
  // Добавить реализации других функций преобразования здесь
-
-
 

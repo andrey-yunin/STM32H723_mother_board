@@ -22,66 +22,35 @@
 	 PARAM_SOURCE_CMD_INIT_MASK,        // Значение используется для фильтрации по маске из cmd.args.init.modules_mask
 
 
-	 // --- параметры для DISPENSER_WASH --- modified 16/02/2026
-	 PARAM_SOURCE_CMD_DISPENSER_ID,     // Значение берется из cmd.args.dispenser_wash.dispenser_id
-	 PARAM_SOURCE_CMD_DISPENSER_WASH_SYRINGE_STEPS, // Шаги шприцевого мотора для DISPENSER_WASH  added 04-03-2026
-	 PARAM_SOURCE_CMD_DISPENSER_CYCLES, // Значение берется из cmd.args.dispenser_wash.cycles
-	 PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN, // Шаги для опускания иглы в процессе DISPENSER_WASH
-	 PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP,   // Шаги для подъема иглы в процессе DISPENSER_WASH
-	 PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS, // Шаги для вращения дозатора в процессе DISPENSER_WASH
+	 // --- Смысловые параметры дозатора ---
+	 PARAM_SOURCE_DISPENSER_ID,
+	 PARAM_SOURCE_DISPENSER_ROTATE_STEPS,
+	 PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN,
+	 PARAM_SOURCE_DISPENSER_Z_STEPS_UP,
+	 PARAM_SOURCE_DISPENSER_SYRINGE_STEPS,
+	 PARAM_SOURCE_DISPENSER_CYCLES,
 
-	 // --- параметры для WASH_STATION_WASH --- added 05/02/2026
-	 PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES, // Это относится к циклам из команды, которые будут обрабатываться JobManager_Run для повторения рецепта
-	 PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Для рассчитанных шагов поворота диска
+	 // --- Смысловые параметры моющей станции ---
+	 PARAM_SOURCE_WASH_STATION_CYCLES,
+	 PARAM_SOURCE_WASH_STATION_FILL_DURATION_MS,
 
+	 // --- Смысловые параметры реакционного диска ---
+	 PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS,
 
-	 // ---конец параметров для WASH_STATION_WASH ---
+	 // --- Смысловые параметры диска образцов/реагентов ---
+	 PARAM_SOURCE_REAGENT_SAMPLE_ROTATE_STEPS,
 
-	 // --- Параметры для SAMPLE_ROTATE --- added 11/02/2026
-	 PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // источник для рассчитанных шагов поворота диска образцов
-
-
-	 // --- Параметры для DISPENSER_ASPIRATE --- added 11/02/2026
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID,
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE,
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS,
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN,
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP,
-	 PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SYRINGE_STEPS, //added 04/03/2026
-
-
-	 // --- Параметры для DISPENSER_DISPENSE --- added 13/02/2026
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID,
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_TARGET_TYPE,
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS,
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN,
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP,
-	 PARAM_SOURCE_CMD_DISPENSER_DISPENSE_SYRINGE_STEPS, // added 13/02/2026
+	 // --- Смысловые параметры миксера ---
+	 PARAM_SOURCE_MIXER_ID,
+	 PARAM_SOURCE_MIXER_XY_STEPS,
+	 PARAM_SOURCE_MIXER_Z_STEPS_DOWN,
+	 PARAM_SOURCE_MIXER_Z_STEPS_UP,
+	 PARAM_SOURCE_MIXER_PADDLE_DURATION_MS,
+	 PARAM_SOURCE_MIXER_WASH_CYCLES,
 
 
-	 // --- Параметры для REAGENT_ROTATE --- --- added 13/02/2026
-	 PARAM_SOURCE_CMD_REAGENT_ROTATE_ROTOR_ID,
-	 PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS,
-
-
-	 // --- Параметры для MIXER_MIX --- --- added 13/02/2026
-	 PARAM_SOURCE_CMD_MIXER_MIX_MIXER_ID,
-	 PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS,
-	 PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS,
-	 PARAM_SOURCE_CMD_MIXER_MIX_WASH_CYCLES,
-	 PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN,
-	 PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP,
-
-
-	 // --- Параметры для PHOTOMETER_SCAN_SINGLE ---
-	 PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS,
-	 PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK,
-
-
-	 // --- Параметры для WASH_STATION_FILL --- added 17/02/2026
-	 PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS,
-	 PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS,
-
+	 // --- Смысловые параметры фотометра ---
+	 PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK,
 
 
 	 // Добавьте другие источники по мере необходимости
@@ -101,8 +70,6 @@
      ACTION_STOP_PUMP,       // Выключить насос // Service/manual/emergency only
      ACTION_WAIT_MS,         // Подождать N миллисекунд
      ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
-	 ACTION_START_MIXING_MOTOR, // <-- НОВОЕ ДЕЙСТВИЕ: Включить мотор перемешивания added 13/02/2026
-	 ACTION_STOP_MIXING_MOTOR,  // <-- НОВОЕ ДЕЙСТВИЕ: Выключить мотор перемешивани added 13/02/2026
 	 ACTION_PERFORM_SCAN, // <-- НОВОЕ ДЕЙСТВИЕ: Выполнить сканирование фотометром added 16/02/2026
      // ... Другие будущие действия ...
  } ActionType_t;
@@ -146,16 +113,6 @@
              uint16_t speed; // Скорость поиска
              ParamSource_t speed_source;    // NEW!
          } home_motor;
-
-
-         // <-- НОВАЯ СТРУКТУРА ДЛЯ МОТОРА ПЕРЕМЕШИВАНИЯ --> added 13/02/2026
-         // Параметры для ACTION_START_MIXING_MOTOR / ACTION_STOP_MIXING_MOTOR
-         struct {
-        	 uint8_t mixer_id; // ID миксера (или мотора перемешивания)
-        	 ParamSource_t mixer_id_source;
-
-        	 // Возможно, тут нужны параметры для скорости/мощности, но для простоты пока только ID
-          } mixing_motor;
 
           // <-- НОВАЯ СТРУКТУРА ДЛЯ ФОТОМЕТРА --> added 16/02/2026
           // Параметры для ACTION_PERFORM_SCAN

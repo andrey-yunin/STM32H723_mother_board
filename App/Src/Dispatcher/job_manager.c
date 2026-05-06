@@ -31,6 +31,38 @@ static void JobManager_ExecuteStep(JobContext_t* job);
 static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status);
 static void JobManager_SignalSystemReady(void);
 
+static uint32_t JobManager_AbsSteps(int32_t steps)
+{
+	// INT32_MIN нельзя безопасно инвертировать простым "-steps".
+    return (steps < 0) ? ((uint32_t)(-(steps + 1)) + 1) : (uint32_t)steps;
+}
+
+static void JobManager_ExtendStepTimeout(JobContext_t* job, uint32_t required_timeout_ms)
+{
+	if (required_timeout_ms > job->step_timeout_ms) {
+		job->step_timeout_ms = required_timeout_ms;
+		}
+}
+
+static uint32_t JobManager_CalcMotionRotateTimeoutMs(int32_t steps, uint16_t speed)
+{
+	uint32_t abs_steps = JobManager_AbsSteps(steps);
+
+	if (abs_steps == 0) {
+		return JOB_TIMEOUT_MS;
+	}
+
+	// speed уже проверен вызывающим кодом: здесь считаем только физическое время.
+	uint64_t motion_ms = (((uint64_t)abs_steps * 1000) + speed - 1) / speed;
+
+	if (motion_ms > (UINT32_MAX - JOB_MOTION_ROTATE_MARGIN_MS)) {
+		return UINT32_MAX;
+	}
+	return (uint32_t)motion_ms + JOB_MOTION_ROTATE_MARGIN_MS;
+}
+
+
+
 // --- API функции ---
 
 void JobManager_Init(void)
@@ -80,6 +112,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     job->current_step_index = 0;
     job->pending_actions_count = 0;
     job->step_start_time_ms = HAL_GetTick();
+    job->step_timeout_ms = JOB_TIMEOUT_MS;
     job->initial_cmd = *parsed_cmd;
 
     char ack_msg[APP_USB_RESP_MAX_LEN];
@@ -140,31 +173,26 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 				// but included for completeness.
 				return job->initial_cmd.args.init.modules_mask;
 
-			case PARAM_SOURCE_CMD_DISPENSER_ID:
-				return job->initial_cmd.args.dispenser_wash.dispenser_id;
+			case PARAM_SOURCE_DISPENSER_ID:
+				switch (job->initial_recipe_id) {
+					case RECIPE_DISPENSER_WASH:
+						return job->initial_cmd.args.dispenser_wash.dispenser_id;
+					case RECIPE_DISPENSER_ASPIRATE:
+						return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
+					case RECIPE_DISPENSER_DISPENSE:
+						return job->initial_cmd.args.dispenser_dispense.dispenser_id;
+					default:
+						break;
+					}
+				break;
 
-			case PARAM_SOURCE_CMD_WASH_STATION_WASH_CYCLES: // <-- added 05/02/2026
+			case PARAM_SOURCE_WASH_STATION_CYCLES:
 				return job->initial_cmd.args.wash_station_wash.cycles;
 
-			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_DISPENSER_ID: // <-- added 12/02/2026
-				return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
-
-			case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SOURCE_TYPE: // <-- added 12/02/2026
-				return job->initial_cmd.args.dispenser_aspirate.source_type;
-
-			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_DISPENSER_ID: // <-- added 13/02/2026
-				return job->initial_cmd.args.dispenser_dispense.dispenser_id;
-
-			case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_TARGET_TYPE: // <-- added 13/02/2026
-				return job->initial_cmd.args.dispenser_dispense.target_type;
-
-			case PARAM_SOURCE_CMD_REAGENT_ROTATE_ROTOR_ID: // <-- <-- added 13/02/2026
-				return job->initial_cmd.args.reagent_rotate.rotor_id;
-
-			 case PARAM_SOURCE_CMD_MIXER_MIX_MIXER_ID: // <--added 16/02/2026
+			 case PARAM_SOURCE_MIXER_ID:
 				 return job->initial_cmd.args.mixer_mix.mixer_id;
 
-			 case PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK: // <-- НОВЫЙ CASE ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
+			 case PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK:
 				 return job->initial_cmd.args.photometer_scan_single.wavelength_mask;
 
 
@@ -184,12 +212,8 @@ static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
 
-			case PARAM_SOURCE_CMD_DISPENSER_CYCLES:
+			case PARAM_SOURCE_DISPENSER_CYCLES:
 				return job->initial_cmd.args.dispenser_wash.cycles;
-
-
-	//		case PARAM_SOURCE_CMD_WASH_STATION_WASH_CUVETTE: // <-- added 05/02/2026
-		//		return job->initial_cmd.args.wash_station_wash.cuvette;
 
 			default:
 				break;
@@ -203,65 +227,96 @@ static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t s
 	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
 		switch (source) {
 		// Add int32_t sources here as needed
-		case PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS: // added 06.02.2026 Changed from CUVETTE to ROTATE_STEPS
-			return (int32_t)job->initial_cmd.args.wash_station_wash.rotate_steps; // Direct access to int32_t rotate_steps
+		case PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS:
+			switch (job->initial_recipe_id) {
+				case RECIPE_WASH_STATION_WASH:
+					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_wash.cuvette);
+				case RECIPE_WASH_STATION_FILL:
+					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_fill.cuvette);
+				case RECIPE_PHOTOMETER_SCAN_SINGLE:
+					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.photometer_scan_single.cuvette);
+				default:
+					break;
+				}
+			break;
 
-		case PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS:                         // added 11/02/2026
-			return job->initial_cmd.args.sample_rotate.rotate_steps;
+		case PARAM_SOURCE_REAGENT_SAMPLE_ROTATE_STEPS:
+			switch (job->initial_recipe_id) {
+				case RECIPE_SAMPLE_ROTATE:
+					return ParamTranslator_SampleDiskSlotToSteps(job->initial_cmd.args.sample_rotate.slot);
+				case RECIPE_REAGENT_ROTATE:
+					return ParamTranslator_ReagentRotorSlotToSteps(
+							job->initial_cmd.args.reagent_rotate.rotor_id,
+							job->initial_cmd.args.reagent_rotate.slot);
+				default:
+					break;
+				}
+			break;
 
-		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS:             // added 12/02/2026
-			return job->initial_cmd.args.dispenser_aspirate.rotate_steps;
+		case PARAM_SOURCE_DISPENSER_ROTATE_STEPS:
+			switch (job->initial_recipe_id) {
+				case RECIPE_DISPENSER_WASH:
+					return job->initial_cmd.args.dispenser_wash.rotate_steps;
+				case RECIPE_DISPENSER_ASPIRATE:
+					return job->initial_cmd.args.dispenser_aspirate.rotate_steps;
+				case RECIPE_DISPENSER_DISPENSE:
+					return job->initial_cmd.args.dispenser_dispense.rotate_steps;
+				default:
+					break;
+				}
+			break;
 
-		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN:               // added 12/02/2026
-			return job->initial_cmd.args.dispenser_aspirate.steps_down;
+		case PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN:
+			switch (job->initial_recipe_id) {
+				case RECIPE_DISPENSER_WASH:
+					return job->initial_cmd.args.dispenser_wash.steps_down;
+				case RECIPE_DISPENSER_ASPIRATE:
+					return job->initial_cmd.args.dispenser_aspirate.steps_down;
+				case RECIPE_DISPENSER_DISPENSE:
+					return job->initial_cmd.args.dispenser_dispense.steps_down;
+				default:
+					break;
+				}
+			break;
 
-		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP:                 // added 12/02/2026
-			return job->initial_cmd.args.dispenser_aspirate.steps_up;
+		case PARAM_SOURCE_DISPENSER_Z_STEPS_UP:
+			switch (job->initial_recipe_id) {
+				case RECIPE_DISPENSER_WASH:
+					return job->initial_cmd.args.dispenser_wash.steps_up;
+				case RECIPE_DISPENSER_ASPIRATE:
+					return job->initial_cmd.args.dispenser_aspirate.steps_up;
+				case RECIPE_DISPENSER_DISPENSE:
+					return job->initial_cmd.args.dispenser_dispense.steps_up;
+				default:
+					break;
+				}
+			break;
 
-		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS: // <-- added 13/02/2026
-			return job->initial_cmd.args.dispenser_dispense.rotate_steps;
+		case PARAM_SOURCE_MIXER_XY_STEPS:
+			return ParamTranslator_MixerCuvetteToXYSteps(job->initial_cmd.args.mixer_mix.cuvette);
 
-		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN: // <-- added 13/02/2026
-			return job->initial_cmd.args.dispenser_dispense.steps_down;
+		case PARAM_SOURCE_MIXER_Z_STEPS_DOWN:
+			return ParamTranslator_MixerZToStepsDown(
+					job->initial_cmd.args.mixer_mix.mixer_id,
+					job->initial_cmd.args.mixer_mix.cuvette);
 
-		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP: // <-- added 13/02/2026
-			return job->initial_cmd.args.dispenser_dispense.steps_up;
+		case PARAM_SOURCE_MIXER_Z_STEPS_UP:
+			return ParamTranslator_MixerZToStepsUp(
+					job->initial_cmd.args.mixer_mix.mixer_id,
+					job->initial_cmd.args.mixer_mix.cuvette);
 
-		case PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS: // <-- added 13/02/2026
-			 return job->initial_cmd.args.reagent_rotate.rotate_steps;
-
-		case PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS: // <-- added 16/02/2026
-			return job->initial_cmd.args.mixer_mix.rotate_steps;
-
-		case PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN: // <-- added 16/02/2026
-			return job->initial_cmd.args.mixer_mix.z_steps_down;
-
-		case PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP: // <-- added 16/02/2026
-			return job->initial_cmd.args.mixer_mix.z_steps_up;
-
-		case PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS: // <-- added for PHOTOMETER_SCAN_SINGLE 16/02/2026
-			return job->initial_cmd.args.photometer_scan_single.rotate_steps;
-
-		case PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS: // <-- added 16/02/2026 NEW for DISPENSER_WASH refactoring
-			return job->initial_cmd.args.dispenser_wash.rotate_steps;
-
-		case PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN: // <-- added 16/02/2026 NEW for DISPENSER_WASH refactoring
-			return job->initial_cmd.args.dispenser_wash.steps_down;
-
-		case PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP: // <-- added 16/02/2026NEW for DISPENSER_WASH refactoring
-			return job->initial_cmd.args.dispenser_wash.steps_up;
-
-		case PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS: // added 17/02/2026 New for WASH_STATION_FILL
-			return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_fill.cuvette);
-
-		case PARAM_SOURCE_CMD_DISPENSER_WASH_SYRINGE_STEPS: //added 04.03/2026
-			return job->initial_cmd.args.dispenser_wash.syringe_steps;
-
-		case PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SYRINGE_STEPS: //added 04.03/2026
-			return job->initial_cmd.args.dispenser_aspirate.syringe_steps;
-
-		case PARAM_SOURCE_CMD_DISPENSER_DISPENSE_SYRINGE_STEPS: //added 04.03/2026
-			return job->initial_cmd.args.dispenser_dispense.syringe_steps;
+		case PARAM_SOURCE_DISPENSER_SYRINGE_STEPS:
+			switch (job->initial_recipe_id) {
+				case RECIPE_DISPENSER_WASH:
+					return job->initial_cmd.args.dispenser_wash.syringe_steps;
+				case RECIPE_DISPENSER_ASPIRATE:
+					return job->initial_cmd.args.dispenser_aspirate.syringe_steps;
+				case RECIPE_DISPENSER_DISPENSE:
+					return job->initial_cmd.args.dispenser_dispense.syringe_steps;
+				default:
+					break;
+				}
+			break;
 
 		default:
 			break;
@@ -276,7 +331,7 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 		switch (source) {
 			// case PARAM_SOURCE_CMD_DISPENSER_VOLUME: // This old source is removed
 				// return job->initial_cmd.args.dispenser_wash.volume;
-		case PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS: {
+		case PARAM_SOURCE_WASH_STATION_FILL_DURATION_MS: {
 			uint32_t duration_ms = 0;
 			if (!Calibrator_PumpVolumeToDurationMs(SYS_WASH_PUMP_FILL,
 					job->initial_cmd.args.wash_station_fill.volume_ul,
@@ -286,6 +341,9 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 				}
 			return duration_ms;
 			}
+
+		case PARAM_SOURCE_MIXER_PADDLE_DURATION_MS:
+			return job->initial_cmd.args.mixer_mix.duration_ms;
 
 		// Add other uint32_t sources here as needed
 		// For example:
@@ -420,7 +478,7 @@ void JobManager_Run(void)
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 		JobContext_t* job = &g_active_jobs[i];
 		if (job->status == JOB_STATUS_RUNNING) {
-			if ((HAL_GetTick() - job->step_start_time_ms) > JOB_TIMEOUT_MS) {
+			if ((HAL_GetTick() - job->step_start_time_ms) > job->step_timeout_ms) {
 				char err_msg[APP_USB_RESP_MAX_LEN];
 				snprintf(err_msg, sizeof(err_msg), "ERROR: Job #%lu timed out at step %u.", (unsigned long)job->job_id, (unsigned int)job->current_step_index);
 						Dispatcher_SendUsbResponse(err_msg);
@@ -472,6 +530,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
     }
 
     job->step_start_time_ms = HAL_GetTick();
+    job->step_timeout_ms = JOB_TIMEOUT_MS;
     job->pending_actions_count = current_step->num_actions;
 
     char info_msg[APP_USB_RESP_MAX_LEN];
@@ -490,9 +549,23 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 int32_t steps = JobManager_GetInt32Param(job, action->params.rotate_motor.steps_source, action->params.rotate_motor.steps);
             	uint16_t speed = JobManager_GetUint16Param(job, action->params.rotate_motor.speed_source, action->params.rotate_motor.speed);
             	
-                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Motor SysID %u", (unsigned long)job->job_id, sys_id);
+            	uint32_t abs_steps = JobManager_AbsSteps(steps);
+            	if (abs_steps != 0 && speed == 0) {
+            		snprintf(info_msg, sizeof(info_msg),
+            				"ERROR: Job #%lu: Invalid Motion speed 0 for SysID %u",
+							(unsigned long)job->job_id, sys_id);
+
+            		Dispatcher_SendUsbResponse(info_msg);
+            		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+            		return;
+            		}
+
+            	JobManager_ExtendStepTimeout(job, JobManager_CalcMotionRotateTimeoutMs(steps, speed));
+
+            	phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
+
+            	if (!phys_addr.is_valid) {
+            		snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Motor SysID %u", (unsigned long)job->job_id, sys_id);
                     Dispatcher_SendUsbResponse(info_msg);
                     JobManager_CompleteJob(job, JOB_STATUS_ERROR);
                     return;
@@ -512,6 +585,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 uint8_t sys_id = JobManager_GetUint8Param(job, action->params.home_motor.motor_id_source, action->params.home_motor.motor_id);
                 uint16_t speed = JobManager_GetUint16Param(job, action->params.home_motor.speed_source, action->params.home_motor.speed);
 
+
                 // Фильтрация по маске для инициализации
                 if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM) {
                     if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
@@ -522,6 +596,18 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                         }
                     }
                 }
+
+                if (speed == 0) {
+                	snprintf(info_msg, sizeof(info_msg),
+                			"ERROR: Job #%lu: Invalid HOME speed 0 for SysID %u",
+							(unsigned long)job->job_id, sys_id);
+
+                	Dispatcher_SendUsbResponse(info_msg);
+                	JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                	return;
+                	}
+
+                JobManager_ExtendStepTimeout(job, JOB_MOTION_HOME_TIMEOUT_MS);
 
                 phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
                 if (!phys_addr.is_valid) {
@@ -553,11 +639,17 @@ static void JobManager_ExecuteStep(JobContext_t* job)
               	if (duration_ms == 0) {
               		snprintf(info_msg, sizeof(info_msg),
               				"ERROR: Job #%lu: Invalid pump duration for SysID %u",
-              				(unsigned long)job->job_id, sys_id);
+							(unsigned long)job->job_id, sys_id);
               		Dispatcher_SendUsbResponse(info_msg);
               		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
               		return;
               	}
+
+              	// Finite Fluidics: ждем физическую длительность операции плюс запас.
+              	JobManager_ExtendStepTimeout(
+              			job,
+						duration_ms + JOB_PUMP_DURATION_MARGIN_MS);
+
 
               	phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
               	if (!phys_addr.is_valid) {
@@ -626,42 +718,6 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Started WAIT_MS for %lu ms.", (unsigned long)job->job_id, (unsigned long)delay);
             	Dispatcher_SendUsbResponse(info_msg);
             	job->pending_actions_count--;
-            	break;
-            }
-
-            case ACTION_START_MIXING_MOTOR: {
-            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
-                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Mixer SysID %u", (unsigned long)job->job_id, sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent START_MIXING (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
-            	Dispatcher_SendUsbResponse(info_msg);
-            	
-            	Packer_CreateStartContinuousMotorMsg(phys_addr.ch_idx, 0, &can_msg);
-                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
-            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-            	break;
-            }
-
-            case ACTION_STOP_MIXING_MOTOR: {
-            	uint8_t sys_id = JobManager_GetUint8Param(job, action->params.mixing_motor.mixer_id_source, action->params.mixing_motor.mixer_id);
-                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg), "ERROR: Job #%lu: Invalid Mixer SysID %u", (unsigned long)job->job_id, sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-            	snprintf(info_msg, sizeof(info_msg), "DEBUG: Job #%lu: Sent STOP_MIXING (Phys:%u:%u)", (unsigned long)job->job_id, phys_addr.node_id, phys_addr.ch_idx);
-            	Dispatcher_SendUsbResponse(info_msg);
-            	
-            	Packer_CreateStopMotorMsg(phys_addr.ch_idx, &can_msg);
-                can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys_addr.node_id, CAN_ADDR_CONDUCTOR);
-            	xQueueSend(can_tx_queue_handle, &can_msg, 0);
             	break;
             }
 

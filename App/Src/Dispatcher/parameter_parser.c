@@ -72,9 +72,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
      case 0x4000: // Команда  <-- added 05/02/2026
     	 if (params_len == 3) {
     		 cmd->args.wash_station_wash.cycles = raw_params[0];
-
-    		 // Вычисляем шаги поворота диска, используя функцию из param_translator
-    		 cmd->args.wash_station_wash.rotate_steps = ParamTranslator_CuvetteToSteps(read_uint16_from_buffer(&raw_params[1]));
+    		 cmd->args.wash_station_wash.cuvette = read_uint16_from_buffer(&raw_params[1]);
     		 cmd->args_type = ARGS_TYPE_PARSED;
     		 }
     	 else {
@@ -84,8 +82,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
 
     case 0x5110: // SAMPLE_ROTATE command
     	if (params_len == 2) {
-    		uint16_t received_slot = read_uint16_from_buffer(&raw_params[0]);
-    		cmd->args.sample_rotate.rotate_steps = ParamTranslator_SampleDiskSlotToSteps(received_slot);
+    		cmd->args.sample_rotate.slot = read_uint16_from_buffer(&raw_params[0]);
     		cmd->args_type = ARGS_TYPE_PARSED;
     		} else {
     			success = false;
@@ -144,7 +141,7 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		uint16_t received_slot_number = read_uint16_from_buffer(&raw_params[1]);
 
     		cmd->args.reagent_rotate.rotor_id = received_rotor_id;
-    		cmd->args.reagent_rotate.rotate_steps = ParamTranslator_ReagentRotorSlotToSteps(received_rotor_id, received_slot_number);
+    		cmd->args.reagent_rotate.slot = received_slot_number;
 
     		cmd->args_type = ARGS_TYPE_PARSED;
     		}
@@ -155,19 +152,10 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
 
     case 0x3100: // MIXER_MIX command added 13/02/2026
     	if (params_len == 6) { // Общая длина параметров: mixer_id (1 байт) + cuvette (2 байта) + duration (2 байта) + wash_cycles (1 байт) = 6 байт
-    		// Чтение необработанных параметров из буфера:
-    		uint8_t received_mixer_id = raw_params[0];                              // mixer_id: первый байт
-    		uint16_t received_cuvette = read_uint16_from_buffer(&raw_params[1]);    // cuvette: 2 байта, начиная со смещения 1
-    		uint16_t received_duration = read_uint16_from_buffer(&raw_params[3]);   // duration: 2 байта, начиная со смещения 3
-    		uint8_t received_wash_cycles = raw_params[5];                           // wash_cycles: 1 байт, по смещению 5
-
-    		// Заполнение структуры ParsedArgs_MixerMix:
-    		cmd->args.mixer_mix.mixer_id = received_mixer_id;                       // Сохраняем ID миксера напрямую
-    		cmd->args.mixer_mix.rotate_steps = ParamTranslator_MixerCuvetteToRotationSteps(received_cuvette); // Трансляция cuvette в шаги вращения (низкоуровневый параметр)
-    		cmd->args.mixer_mix.z_steps_down = ParamTranslator_MixerZToStepsDown(received_mixer_id, received_cuvette); // Расчет шагов для опускания лопатки
-    		cmd->args.mixer_mix.z_steps_up = ParamTranslator_MixerZToStepsUp(received_mixer_id, received_cuvette);   // Расчет шагов для подъема лопатки
-    		cmd->args.mixer_mix.duration_ms = received_duration;                    // Сохраняем длительность перемешивания (уже в мс, низкоуровневый параметр)
-    		cmd->args.mixer_mix.wash_cycles = received_wash_cycles;                 // Сохраняем количество промывок (высокоуровневый параметр для JobManager)
+    		cmd->args.mixer_mix.mixer_id = raw_params[0];
+    		cmd->args.mixer_mix.cuvette = read_uint16_from_buffer(&raw_params[1]);
+    		cmd->args.mixer_mix.duration_ms = read_uint16_from_buffer(&raw_params[3]);
+    		cmd->args.mixer_mix.wash_cycles = raw_params[5];
 
     		cmd->args_type = ARGS_TYPE_PARSED; // Отмечаем, что параметры успешно разобраны
     		}
@@ -179,14 +167,8 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
 
     case 0x6100: // PHOTOMETER_SCAN_SINGLE command added 16/02/2026
     	if (params_len == 3) {
-    		uint16_t received_cuvette = read_uint16_from_buffer(&raw_params[0]);
-    		uint8_t received_mask = raw_params[2];
-
-    		// Вызов транслятора для получения шагов
-    		cmd->args.photometer_scan_single.rotate_steps = ParamTranslator_PhotometerCuvetteToSteps(received_cuvette);
-
-    		// Прямое сохранение маски
-    		cmd->args.photometer_scan_single.wavelength_mask = received_mask;
+    		cmd->args.photometer_scan_single.cuvette = read_uint16_from_buffer(&raw_params[0]);
+    		cmd->args.photometer_scan_single.wavelength_mask = raw_params[2];
 
     		cmd->args_type = ARGS_TYPE_PARSED;
     		}
@@ -224,6 +206,3 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
 
 	return success;
 	}
-
-
-

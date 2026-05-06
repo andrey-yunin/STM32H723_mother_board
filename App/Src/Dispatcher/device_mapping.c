@@ -26,9 +26,11 @@ DevicePhysAddr_t DeviceMapping_GetMotorPhysAddr(uint8_t system_id)
         case SYS_REACTION_DISK_MOTOR:       addr.ch_idx = 3; break;
         case SYS_REAGENT_SAMPLE_DISK_MOTOR: addr.ch_idx = 4; break;
 
-        case SYS_MIXER_MOTOR_XY:     addr.ch_idx = 5; break;
-        case SYS_MIXER_MOTOR_Z:      addr.ch_idx = 6; break;
-        case SYS_MIXER_PADDLE_MOTOR: addr.ch_idx = 7; break;
+        case SYS_MIXER_MOTOR_XY:     addr.ch_idx = 5;  break;
+        case SYS_MIXER_MOTOR_Z:      addr.ch_idx = 6;  break;
+
+
+
 
         default:
             addr.is_valid = false;
@@ -48,6 +50,8 @@ DevicePhysAddr_t DeviceMapping_GetFluidicPhysAddr(uint8_t system_id)
         case SYS_WASH_PUMP_FILL:  addr.ch_idx = 10; break;
         case SYS_WASH_PUMP_DRAIN: addr.ch_idx = 11; break;
         
+        case SYS_MIXER_PADDLE_LOAD:  addr.ch_idx = 12; break; // Последний силовой канал перед клапанами.
+
         default:
             addr.is_valid = false;
             break;

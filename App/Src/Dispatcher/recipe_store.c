@@ -111,7 +111,7 @@
 					 .motor_id = SYS_DISPENSER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0, // Placeholder, will be replaced by source
-					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS,
+					 .steps_source = PARAM_SOURCE_DISPENSER_ROTATE_STEPS,
 					 .speed = 800,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -125,7 +125,7 @@
 					 .motor_id = SYS_DISPENSER_MOTOR_Z,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_DOWN,
+					 .steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN,
 					 .speed = 400,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -140,7 +140,7 @@
 						 .motor_id = SYS_DISPENSER_MOTOR_SYRINGE,
 			             .motor_id_source = PARAM_SOURCE_STATIC,
 			             .steps = 0,
-			             .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_SYRINGE_STEPS,
+			             .steps_source = PARAM_SOURCE_DISPENSER_SYRINGE_STEPS,
 			             .speed = SYRINGE_DEFAULT_SPEED,
 			             .speed_source = PARAM_SOURCE_STATIC
 					}}
@@ -156,7 +156,7 @@
 					   .motor_id = SYS_DISPENSER_MOTOR_Z,
 					   .motor_id_source = PARAM_SOURCE_STATIC,
 					   .steps = 0,
-					   .steps_source = PARAM_SOURCE_CMD_DISPENSER_WASH_STEPS_UP,
+					   .steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_UP,
 					   .speed = 400,
 					   .speed_source = PARAM_SOURCE_STATIC
 				  }}
@@ -198,44 +198,37 @@
 					{ .action = ACTION_ROTATE_MOTOR,
 						.params.rotate_motor = {
 							.motor_id = SYS_REACTION_DISK_MOTOR, .motor_id_source = PARAM_SOURCE_STATIC,
-							.steps = 3000, .steps_source = PARAM_SOURCE_CMD_WASH_STATION_WASH_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
+							.steps = 0, .steps_source = PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS,
 							.speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
 					}}
 				},
 					.num_actions = 1
 					},
 
-		// Шаг 2: Заполнение кюветы (насос заполнения).
+		// Шаг 2: Заполнение кюветы конечной командой Fluidics.
     	{
 				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_START_PUMP,
-						.params.pump = { .pump_id = SYS_WASH_PUMP_FILL, .pump_id_source = PARAM_SOURCE_STATIC } },
-					{ .action = ACTION_WAIT_MS,    .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC }} // Задержка фиксирована
-					},
-					.num_actions = 2
-					},
-
-		// Шаг 3: Остановка насоса заполнения.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = SYS_WASH_PUMP_FILL, .pump_id_source = PARAM_SOURCE_STATIC } }
+					{ .action = ACTION_RUN_PUMP_DURATION,
+						.params.pump_duration = {
+							.pump_id = SYS_WASH_PUMP_FILL,
+							.pump_id_source = PARAM_SOURCE_STATIC,
+							.duration_ms = 1000,
+							.duration_ms_source = PARAM_SOURCE_STATIC
+						}}
 					},
 					.num_actions = 1
 					},
 
-		// Шаг 4: Слив из кюветы (насос слива).
+		// Шаг 3: Слив из кюветы конечной командой Fluidics.
 		{
 				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_START_PUMP, .params.pump = { .pump_id = SYS_WASH_PUMP_DRAIN, .pump_id_source = PARAM_SOURCE_STATIC } },
-					{ .action = ACTION_WAIT_MS, .params.wait = { .delay_ms = 1000, .delay_ms_source = PARAM_SOURCE_STATIC } }
-					},
-					.num_actions = 2
-					},
-
-		// Шаг 5: Остановка насоса слива.
-		{
-				.atomic_actions = (const AtomicAction_t[]){
-					{ .action = ACTION_STOP_PUMP, .params.pump = { .pump_id = SYS_WASH_PUMP_DRAIN, .pump_id_source = PARAM_SOURCE_STATIC } }
+					{ .action = ACTION_RUN_PUMP_DURATION,
+						.params.pump_duration = {
+							.pump_id = SYS_WASH_PUMP_DRAIN,
+							.pump_id_source = PARAM_SOURCE_STATIC,
+							.duration_ms = 1000,
+							.duration_ms_source = PARAM_SOURCE_STATIC
+						}}
 					},
 					.num_actions = 1
 					},
@@ -258,7 +251,7 @@
 						 .motor_id = SYS_REACTION_DISK_MOTOR,
 						 .motor_id_source = PARAM_SOURCE_STATIC,
 						 .steps = 0,
-						 .steps_source = PARAM_SOURCE_CMD_WASH_STATION_FILL_ROTATE_STEPS, // Шаги берутся из рассчитанного параметра
+						 .steps_source = PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS,
 						 .speed = 1000, .speed_source = PARAM_SOURCE_STATIC // Скорость фиксирована
 					}}
 			 },
@@ -273,7 +266,7 @@
 			   				.pump_id = SYS_WASH_PUMP_FILL,
 			   				.pump_id_source = PARAM_SOURCE_STATIC,
 			   				.duration_ms = 0,
-			   				.duration_ms_source = PARAM_SOURCE_CMD_WASH_STATION_FILL_PUMP_DURATION_MS
+			   				.duration_ms_source = PARAM_SOURCE_WASH_STATION_FILL_DURATION_MS
 			   			}}
 			   	},
 			   	.num_actions = 1
@@ -295,7 +288,7 @@ const ProcessStep_t g_recipe_sample_rotate[] = {
 					.motor_id = SYS_REAGENT_SAMPLE_DISK_MOTOR,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,                             // Статическое значение будет перезаписано динамически
-					.steps_source = PARAM_SOURCE_CMD_SAMPLE_ROTATE_STEPS, // Шаги из команды SAMPLE_ROTATE
+					.steps_source = PARAM_SOURCE_REAGENT_SAMPLE_ROTATE_STEPS,
 					.speed = 1000,                          // Скорость вращения (статическая)
 					.speed_source = PARAM_SOURCE_STATIC     // Источник скорости - статическая
 					} }
@@ -318,7 +311,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_XY,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_ROTATE_STEPS,
+					.steps_source = PARAM_SOURCE_DISPENSER_ROTATE_STEPS,
 					.speed = 500,
 					.speed_source = PARAM_SOURCE_STATIC
 					}}
@@ -334,7 +327,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_DOWN,
+					.steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN,
 					.speed = 200,
 					.speed_source = PARAM_SOURCE_STATIC
 					}}
@@ -349,7 +342,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_SYRINGE,
 		            .motor_id_source = PARAM_SOURCE_STATIC,
 		            .steps = 0,
-		            .steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_SYRINGE_STEPS,
+		            .steps_source = PARAM_SOURCE_DISPENSER_SYRINGE_STEPS,
 		            .speed = SYRINGE_DEFAULT_SPEED,
 		            .speed_source = PARAM_SOURCE_STATIC
 					}}
@@ -367,7 +360,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 						.motor_id = SYS_DISPENSER_MOTOR_Z,
 						.motor_id_source = PARAM_SOURCE_STATIC,
 						.steps = 0,
-						.steps_source = PARAM_SOURCE_CMD_DISPENSER_ASPIRATE_STEPS_UP,
+						.steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_UP,
 						.speed = 200,
 						.speed_source = PARAM_SOURCE_STATIC
 					}}
@@ -390,7 +383,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					 .motor_id = SYS_DISPENSER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_ROTATE_STEPS,
+					 .steps_source = PARAM_SOURCE_DISPENSER_ROTATE_STEPS,
 					 .speed = 500,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -404,7 +397,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_DOWN,
+					.steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN,
 					.speed = 200,
 					.speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -418,7 +411,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_SYRINGE,
 		            .motor_id_source = PARAM_SOURCE_STATIC,
 		            .steps = 0,
-		            .steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_SYRINGE_STEPS,
+		            .steps_source = PARAM_SOURCE_DISPENSER_SYRINGE_STEPS,
 		            .speed = SYRINGE_DEFAULT_SPEED,
 		            .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -433,7 +426,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.motor_id = SYS_DISPENSER_MOTOR_Z,
 					.motor_id_source = PARAM_SOURCE_STATIC,
 					.steps = 0,
-					.steps_source = PARAM_SOURCE_CMD_DISPENSER_DISPENSE_STEPS_UP,
+					.steps_source = PARAM_SOURCE_DISPENSER_Z_STEPS_UP,
 					.speed = 200,
 					.speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -457,7 +450,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					 .motor_id = SYS_REAGENT_SAMPLE_DISK_MOTOR,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_REAGENT_ROTATE_STEPS,
+					 .steps_source = PARAM_SOURCE_REAGENT_SAMPLE_ROTATE_STEPS,
 					 .speed = 800,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -479,7 +472,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					 .motor_id = SYS_MIXER_MOTOR_XY,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_ROTATE_STEPS,
+					 .steps_source = PARAM_SOURCE_MIXER_XY_STEPS,
 					 .speed = 1000,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -493,7 +486,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					 .motor_id = SYS_MIXER_MOTOR_Z,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_DOWN,
+					 .steps_source = PARAM_SOURCE_MIXER_Z_STEPS_DOWN,
 					 .speed = 200,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -501,37 +494,25 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			 .num_actions = 1
 		    },
 
-			  // Шаг 3: Включение мотора перемешивания (лопатка) и ожидание.
-			  {.atomic_actions = (const AtomicAction_t[]){
-				  { .action = ACTION_START_MIXING_MOTOR, .params.mixing_motor = {
-						  .mixer_id = SYS_MIXER_PADDLE_MOTOR,
-						  .mixer_id_source = PARAM_SOURCE_STATIC
-				  }},
-				  { .action = ACTION_WAIT_MS, .params.wait = {
-						  .delay_ms = 0,
-						  .delay_ms_source = PARAM_SOURCE_CMD_MIXER_MIX_DURATION_MS
-				   }}
-			  },
-			  .num_actions = 2
-			},
+			// Шаг 3: Включить лопатку миксера на время из команды.
+			  { .atomic_actions = (const AtomicAction_t[]){
+			      { .action = ACTION_RUN_PUMP_DURATION, .params.pump_duration = {
+			          .pump_id = SYS_MIXER_PADDLE_LOAD,
+			          .pump_id_source = PARAM_SOURCE_STATIC,
+			          .duration_ms = 0,
+			          .duration_ms_source = PARAM_SOURCE_MIXER_PADDLE_DURATION_MS
+			      }}
+			  }, .num_actions = 1 },
 
-			// Шаг 4: Выключение мотора перемешивания (лопатка).
-			{.atomic_actions = (const AtomicAction_t[]){
-				{ .action = ACTION_STOP_MIXING_MOTOR, .params.mixing_motor = {
-						.mixer_id = SYS_MIXER_PADDLE_MOTOR,
-						.mixer_id_source = PARAM_SOURCE_STATIC
-				}}
-			},
-			.num_actions = 1
-			},
 
-			// Шаг 5: Подъем лопатки миксера (Z-ось).
+
+			// Шаг 4: Подъем лопатки миксера (Z-ось).
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_ROTATE_MOTOR, .params.rotate_motor = {
 						.motor_id = SYS_MIXER_MOTOR_Z,
 						.motor_id_source = PARAM_SOURCE_STATIC,
 						.steps = 0,
-						.steps_source = PARAM_SOURCE_CMD_MIXER_MIX_Z_STEPS_UP,
+						.steps_source = PARAM_SOURCE_MIXER_Z_STEPS_UP,
 						.speed = 200,
 						.speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -539,7 +520,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			.num_actions = 1
 			},
 
-			// Шаг 6: Возврат миксера (X-Y ось) в исходное положение.
+			// Шаг 5: Возврат миксера (X-Y ось) в исходное положение.
 			{.atomic_actions = (const AtomicAction_t[]){
 				{ .action = ACTION_HOME_MOTOR, .params.home_motor = {
 						.motor_id = SYS_MIXER_MOTOR_XY,
@@ -567,7 +548,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					 .motor_id = SYS_REACTION_DISK_MOTOR,
 					 .motor_id_source = PARAM_SOURCE_STATIC,
 					 .steps = 0,
-					 .steps_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_ROTATE_STEPS,
+					 .steps_source = PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS,
 					 .speed = 1000,
 					 .speed_source = PARAM_SOURCE_STATIC
 				}}
@@ -581,7 +562,7 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 					.photometer_id = SYS_PHOTOMETER_MAIN,
 					.photometer_id_source = PARAM_SOURCE_STATIC,
 					.wavelength_mask = 0, // Будет заменено динамическим параметром
-					.wavelength_mask_source = PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK
+					.wavelength_mask_source = PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK
 				}}
 			},
 			.num_actions = 1

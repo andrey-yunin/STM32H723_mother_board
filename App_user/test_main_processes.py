@@ -260,7 +260,7 @@ def test_sample_rotate_command(slot_number: int):
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:11, Steps:" # DEV_REAGENT_SAMPLE_DISK_MOTOR = 11
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:4, Steps:" # Motion 0x20, sample/reagent disk ch_idx 4
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -299,7 +299,7 @@ def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: 
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:3"
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:2, Steps:" # Motion 0x20, dispenser plunger ch_idx 2
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -339,7 +339,7 @@ def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, v
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:3"
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:2, Steps:" # Motion 0x20, dispenser plunger ch_idx 2
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -379,7 +379,7 @@ def test_reagent_rotate_command(rotor_id: int, slot_number: int):
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:11, Steps:" # DEV_REAGENT_SAMPLE_DISK_MOTOR = 11
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:4, Steps:" # Motion 0x20, sample/reagent disk ch_idx 4
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -420,8 +420,10 @@ def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycl
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (ID:20, Steps:" # DEV_MIXER_MOTOR_XY = 20
-    log_found = False
+    expected_xy_log = "Sent ROTATE_MOTOR (Phys:32:5, Steps:" # Motion 0x20, mixer XY ch_idx 5
+    expected_paddle_log = f"Sent RUN_PUMP_DURATION (Phys:48:12, Duration:{duration})" # Fluidics 0x30, mixer paddle ch_idx 12
+    xy_log_found = False
+    paddle_log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
     start_time = time.time()
@@ -432,8 +434,10 @@ def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycl
                 done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
                 if done_status == 0x0000:
                     print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
+                    if not xy_log_found:
+                        print(f"WARNING: Log '{expected_xy_log}' не найден до DONE.")
+                    if not paddle_log_found:
+                        print(f"WARNING: Log '{expected_paddle_log}' не найден до DONE.")
                     print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
                     return True
                 else:
@@ -442,8 +446,10 @@ def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycl
             else:
                 if msg["type"] == "text":
                     print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
+                    if expected_xy_log in msg["content"]:
+                        xy_log_found = True
+                    if expected_paddle_log in msg["content"]:
+                        paddle_log_found = True
                 elif msg["type"] == "binary":
                     print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
         except queue.Empty:
@@ -461,7 +467,7 @@ def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> b
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent PERFORM_SCAN (ID:1, Mask:0x{wavelength_mask:02X})" # DEV_PHOTOMETER_MAIN = 1
+    expected_log_part = f"Sent SCAN (SysID:1, Mask:0x{wavelength_mask:02X})" # Photometer logical SysID 1
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -493,16 +499,16 @@ def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> b
     return False
 
 # --- ТЕСТ команды WASH_STATION_FILL ---
-def test_wash_station_fill_command(cuvette: int, volume: int) -> bool:
-    print(f"\n=== Тест команды WASH_STATION_FILL (0x4100) для кюветы {cuvette}, объем {volume} мкл ===")
+def test_wash_station_fill_command(volume: int, cuvette: int) -> bool:
+    print(f"\n=== Тест команды WASH_STATION_FILL (0x4100): объем {volume} мкл, кювета {cuvette} ===")
     command_code = 0x4100
-    # cuvette (2 байта, big-endian) + volume (2 байта, big-endian)
-    params = struct.pack('>HH', cuvette, volume)
+    # Host API: volume (2 байта, big-endian) + cuvette (2 байта, big-endian)
+    params = struct.pack('>HH', volume, cuvette)
 
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = f"Sent START_PUMP (ID:10)" # DEV_WASH_PUMP_FILL = 10
+    expected_log_part = "Sent RUN_PUMP_DURATION (Phys:48:10" # Fluidics 0x30 == 48, ch_idx 10
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -516,7 +522,7 @@ def test_wash_station_fill_command(cuvette: int, volume: int) -> bool:
                     print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
                     if not log_found:
                         print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест WASH_STATION_FILL для кюветы {cuvette}, объем {volume} мкл пройден успешно ===")
+                    print(f"=== Тест WASH_STATION_FILL: объем {volume} мкл, кювета {cuvette} пройден успешно ===")
                     return True
                 else:
                     print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
@@ -543,7 +549,7 @@ def test_wash_station_wash_command(cycles: int, cuvette: int) -> bool:
     if not send_and_wait_ack(0x4000, params):
         return False
 
-    expected_log_part = f"Sent ROTATE_MOTOR (ID:10, Steps:" # DEV_REACTION_DISK_MOTOR = 10
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:3, Steps:" # Motion 0x20, reaction disk ch_idx 3
     log_found = False
 
     print(f"Ожидание DONE для команды 0x4000...")
@@ -585,7 +591,7 @@ def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int) -> 
     if not send_and_wait_ack(command_code, params):
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (ID:1, Steps:" # DEV_DISPENSER_MOTOR_XY = 1
+    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:0, Steps:" # Motion 0x20, dispenser XY ch_idx 0
     log_found = False
 
     print(f"Ожидание DONE для команды 0x{command_code:04x}...")
@@ -698,8 +704,8 @@ def main():
             all_tests_passed = False
 
         # 12. Заполнение моечной станции
-        # (кювета 10, объем 500 мкл)
-        if all_tests_passed and not test_wash_station_fill_command(10, 500):
+        # (объем 500 мкл, кювета 10)
+        if all_tests_passed and not test_wash_station_fill_command(500, 10):
             all_tests_passed = False
 
         # 13. Промывка моечной станции

@@ -402,8 +402,6 @@ typedef struct {
 | ACTION_STOP_PUMP | Выключить насос | pump_id |
 | ACTION_WAIT_MS | Задержка | delay_ms |
 | ACTION_HOME_MOTOR | Поиск дома | motor_id, speed |
-| ACTION_START_MIXING_MOTOR | Включить мотор миксера | mixer_id |
-| ACTION_STOP_MIXING_MOTOR | Выключить мотор миксера | mixer_id |
 | ACTION_PERFORM_SCAN | Сканирование фотометром | photometer_id, wavelength_mask |
 
 ### 7.3. Источники параметров (ParamSource_t)
@@ -411,11 +409,11 @@ typedef struct {
 Каждый параметр атомарного действия имеет поле `_source`, определяющее, откуда берется значение:
 
 - **PARAM_SOURCE_STATIC** — значение вписано в рецепт (compile-time)
-- **PARAM_SOURCE_CMD_**** — значение вычисляется из параметров команды пользователя (run-time)
+- **PARAM_SOURCE_**** — значение берется из parsed-параметров команды или рассчитывается в `JobManager`
 
 Примеры динамических источников:
-- `PARAM_SOURCE_CMD_DISPENSER_WASH_ROTATE_STEPS` — шаги из `ParsedArgs_DispenserWash.rotate_steps`
-- `PARAM_SOURCE_CMD_PHOTOMETER_SCAN_SINGLE_WAVELENGTH_MASK` — маска длин волн из команды
+- `PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS` — шаги реакционного диска из Host-поля `cuvette`
+- `PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK` — маска длин волн из команды фотометра
 
 ### 7.4. Реализованные рецепты
 
@@ -425,7 +423,7 @@ typedef struct {
 | RECIPE_DISPENSER_WASH | 0x2000 | 6 | Поворот к станции → опускание → насос → подъем → home |
 | RECIPE_DISPENSER_ASPIRATE | 0x2100 | 5 | Поворот → опускание → насос (забор) → подъем → home |
 | RECIPE_DISPENSER_DISPENSE | 0x2200 | 5 | Поворот → опускание → насос (выдача) → подъем → home |
-| RECIPE_MIXER_MIX | 0x3100 | 6 | Поворот к кювете → опускание → перемешивание → подъем → home |
+| RECIPE_MIXER_MIX | 0x3100 | 5 | XY к кювете → Z вниз → перемешивание → Z вверх → home XY |
 | RECIPE_WASH_STATION_WASH | 0x4000 | 5 | Поворот → заполнение → слив → цикл |
 | RECIPE_WASH_STATION_FILL | 0x4100 | 3 | Поворот → насос заполнения → остановка |
 | RECIPE_SAMPLE_ROTATE | 0x5110 | 1 | Поворот диска образцов на N шагов |
@@ -507,8 +505,7 @@ typedef struct {
 | ROTOR_REAGENT_STEPS_PER_SLOT | 100 | Шагов/слот ротора реагентов |
 | MIXER_Z_STEPS_DOWN | 200 | Шагов опускания лопатки |
 | MIXER_Z_STEPS_UP | -200 | Шагов подъема лопатки |
-| MIXER_ROT_STEPS_PER_CUVETTE | 100 | Шагов/кювету поворота миксера |
-| PHOTOMETER_STEPS_PER_CUVETTE | 100 | Шагов/кювету фотометра |
+| MIXER_XY_STEPS_PER_CUVETTE | 100 | Шагов XY/кювету миксера |
 | PT_REACTION_DISK_STEPS_PER_CUVETTE | 100 | Шагов/кювету реакц. диска |
 | PT_REACTION_DISK_MAX_CUVETTE | 40 | Макс. кювет на диске |
 | DISPENSER_ROT_STEPS_TO_WASH_STATION | 2000 | Шагов к станции промывки |

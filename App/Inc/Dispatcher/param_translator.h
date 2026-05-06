@@ -39,14 +39,11 @@
 #define ROTOR_REAGENT_STEPS_PER_SLOT 100    // Шагов на слот для поворота ротора реагентов
 
 // Константы для трансляции параметров миксера (заглушки)
-// Примечание: ID моторов миксера определены в device_mapping.h (SYS_MIXER_MOTOR_XY, SYS_MIXER_MOTOR_Z, SYS_MIXER_PADDLE_MOTOR)
+// Примечание: шаговые оси миксера определены как SYS_MIXER_MOTOR_XY и SYS_MIXER_MOTOR_Z.
 
-#define MIXER_Z_STEPS_UP             -200   // Шагов для опускания лопатки миксера
-#define MIXER_Z_STEPS_DOWN           200  // Шагов для подъема лопатки миксера
-#define MIXER_ROT_STEPS_PER_CUVETTE  100   // Шагов на кювету для поворота миксера
-
-// Константы для трансляции параметров фотометра (заглушки)
-#define PHOTOMETER_STEPS_PER_CUVETTE 100 // Шагов на кювету для позиционирования фотометра
+#define MIXER_Z_STEPS_UP             -200  // Шагов для подъема лопатки миксера
+#define MIXER_Z_STEPS_DOWN           200   // Шагов для опускания лопатки миксера
+#define MIXER_XY_STEPS_PER_CUVETTE   100   // Шагов XY на кювету
 
 // Константы для трансляции параметров дозатора при работе с промывочной станцией
 #define WASH_STATION_SOURCE_TYPE             0x00 // Уникальный идентификатор для типа источника "промывочная станция"
@@ -158,10 +155,11 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
 
 
   /**
-   * @brief Преобразует номер кюветы в шаги мотора для поворота миксера.   *
+   * @brief Преобразует номер кюветы в шаги XY-оси миксера.
    * @param cuvette_number Номер целевой кюветы.
-   * @return int32_t Количество шагов для поворота миксера к кювете.   */
-  int32_t ParamTranslator_MixerCuvetteToRotationSteps(uint16_t cuvette_number);
+   * @return int32_t Количество шагов XY до кюветы.
+   */
+  int32_t ParamTranslator_MixerCuvetteToXYSteps(uint16_t cuvette_number);
 
    /**
     * @brief Преобразует параметры миксера в шаги для опускания лопатки.    *
@@ -179,16 +177,6 @@ int32_t ParamTranslator_CuvetteToSteps(uint16_t cuvette_number);
     * @return int32_t Количество шагов для подъема лопатки.
     */
    int32_t ParamTranslator_MixerZToStepsUp(uint8_t mixer_id, uint16_t cuvette_number);
-
-
-   /**
-    * @brief Преобразует номер кюветы в шаги мотора для позиционирования фотометра.
-    *
-    * @param cuvette_number Номер целевой кюветы.
-    * @return int32_t Количество шагов для поворота фотометра к кювете.
-    */
-  int32_t ParamTranslator_PhotometerCuvetteToSteps(uint16_t cuvette_number);
-
 
  /**
   * @brief Возвращает шаги мотора для поворота дозатора к станции промывки.

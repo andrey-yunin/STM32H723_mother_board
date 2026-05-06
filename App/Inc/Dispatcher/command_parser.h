@@ -39,15 +39,15 @@ typedef struct {
  */
 typedef struct {
 	uint8_t cycles;
-	int32_t rotate_steps; // Рассчитанные шаги для поворота реакционного диска added 06/02/2026
+	uint16_t cuvette;
 } ParsedArgs_WashStationWash;
 
 /**
 * @brief Разобранные параметры для команды SAMPLE_ROTATE (0x5110) added 11/02/2026
-* Содержит рассчитанные шаги для поворота диска образцов.
+* Содержит Host slot; шаги рассчитываются позже в параметрическом слое.
 */
 typedef struct {
-	int32_t rotate_steps;
+	uint16_t slot;
 	} ParsedArgs_SampleRotate;
 
 
@@ -81,27 +81,44 @@ typedef struct {
   */
 typedef struct {
 	uint8_t  rotor_id;          // ID ротора
-	int32_t  rotate_steps;      // Рассчитанные шаги для поворота ротора
+	uint16_t slot;              // Host API: номер слота
 	} ParsedArgs_ReagentRotate;
+
+/**
+ * @brief Разобранные параметры для команды MIXER_WASH (0x3000).
+ */
+typedef struct {
+	uint8_t mixer_id;
+	uint8_t cycles;
+} ParsedArgs_MixerWash;
+
 
  /**
   * @brief Разобранные параметры для команды MIXER_MIX (0x3100). added 13/02/2026
   */
 typedef struct {
-	uint8_t   mixer_id;          // ID миксера
-	int32_t   rotate_steps;      // Рассчитанные шаги для поворота миксера к кювете
-	int32_t   z_steps_down;      //Рассчитанные шаги для опускания лопатки
-	int32_t   z_steps_up;        //Рассчитанные шаги для подъема лопатки
-	uint16_t  duration_ms;       // Длительность перемешивания
-	uint8_t   wash_cycles;       // Количество циклов промывки после
+	uint8_t   mixer_id;          // Host API: номер миксера
+	uint16_t  cuvette;           // Host API: кювета для перемешивания
+	uint16_t  duration_ms;       // Host API: длительность перемешивания
+	uint8_t   wash_cycles;       // Host API: промывки после перемешивания
 	} ParsedArgs_MixerMix;
+
+
+/**
+ * @brief Разобранные параметры для команды MIXER_HOME (0x3200).
+ */
+typedef struct {
+	uint8_t mixer_id;
+} ParsedArgs_MixerHome;
+
+
 
 /**
  * @brief Разобранные параметры для команды PHOTOMETER_SCAN_SINGLE (0x6100).
  */
 typedef struct {
-	int32_t  rotate_steps;       // Рассчитанные шаги для позиционирования кюветы
-	uint8_t  wavelength_mask;    // Маска длин волн для сканирования
+	uint16_t cuvette;            // Host API: кювета реакционного диска
+	uint8_t  wavelength_mask;    // Host API: маска длин волн
 	} ParsedArgs_PhotometerScanSingle;
 
 
@@ -122,7 +139,6 @@ typedef struct {
   */
 typedef enum {
 	RECIPE_NONE = 0,
-    RECIPE_START_MOTOR,
     RECIPE_ASPIRATE,
     RECIPE_INITIALIZE_SYSTEM,
 	RECIPE_DISPENSER_WASH,
@@ -131,7 +147,9 @@ typedef enum {
 	RECIPE_DISPENSER_ASPIRATE, // added 11/02/2026 ID для команды забора образца дозатором
 	RECIPE_DISPENSER_DISPENSE, // added 13/02/2026
 	RECIPE_REAGENT_ROTATE, // added 13/02/2026
-	RECIPE_MIXER_MIX, // added 13/02/2026
+	RECIPE_MIXER_MIX, // added 06/02/2026
+	RECIPE_MIXER_WASH,// added 13/05/2026
+	RECIPE_MIXER_HOME,// added 13/05/2026
 	RECIPE_PHOTOMETER_SCAN_SINGLE, // <-- added 16/02/2026 НОВЫЙ ID РЕЦЕПТА ДЛЯ PHOTOMETER_SCAN_SINGLE
 	RECIPE_WASH_STATION_FILL, // <-- added 17/02/2026 NEW RECIPE ID FOR WASH_STATION_FILL
 
@@ -207,11 +225,10 @@ typedef struct {
 			ParsedArgs_DispenserDispense dispenser_dispense; // <-- added 13/02/2026
 			ParsedArgs_ReagentRotate reagent_rotate; // <-- added 13/02/2026
 			ParsedArgs_MixerMix mixer_mix; // <-- added 13/02/2026
+			ParsedArgs_MixerWash mixer_wash;
+			ParsedArgs_MixerHome mixer_home;
 			ParsedArgs_PhotometerScanSingle photometer_scan_single; // <-- НОВОЕ ПОЛЕ ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
 			ParsedArgs_WashStationFill wash_station_fill; // <-- added 17/02/2026 Новое поле для WASH_STATION_FILL (0x4100)
-
-
-
 			// Здесь будут добавляться другие команды
 			} args;
 } UniversalCommand_t;

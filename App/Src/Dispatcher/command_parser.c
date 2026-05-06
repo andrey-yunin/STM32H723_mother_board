@@ -182,14 +182,12 @@ typedef struct {
 } CommandEntry_t;
 
 // Прототипы обработчиков строковых аргументов
-static CommandStatus_t process_string_args_motor(const char *args, UniversalCommand_t *cmd);
 static CommandStatus_t process_string_args_aspirate(const char *args, UniversalCommand_t *cmd);
 
 
 // === Таблица строковых команд ===
 
 static const CommandEntry_t command_table[] = {
-    { "CMD_START_MOTOR", RECIPE_START_MOTOR, process_string_args_motor,    "Usage: CMD_START_MOTOR <motor_id>" },
     { "CMD_ASPIRATE",    RECIPE_ASPIRATE,    process_string_args_aspirate, "Usage: CMD_ASPIRATE <reagent_id>" },
 };
 static const size_t num_commands = sizeof(command_table) / sizeof(command_table[0]);
@@ -237,18 +235,6 @@ void Parser_ProcessCommand(char *command_line)
 }
 
 // === Реализация обработчиков строковых аргументов ===
-
-static CommandStatus_t process_string_args_motor(const char *args, UniversalCommand_t *cmd) {
-    int motor_id;
-    if (args == NULL || sscanf(args, "%d", &motor_id) != 1) {
-        return CMD_INVALID_ARGS;
-    }
-    cmd->args_type = ARGS_TYPE_STRING;
-    snprintf(cmd->args.string, APP_USB_CMD_MAX_LEN, "%d", motor_id); // Corrected: Use args instead of %d
-    cmd->args.string[APP_USB_CMD_MAX_LEN - 1] = '\0';
-    if (JobManager_StartNewJob(cmd) == 0) return CMD_ERROR;
-    return CMD_OK;
-}
 
 static CommandStatus_t process_string_args_aspirate(const char *args, UniversalCommand_t *cmd) {
     int reagent_id;
@@ -403,4 +389,3 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     Dispatcher_SendError(command_code, 0x0002); // ERR_UNKNOWN_COMMAND
     return;
 }
-
