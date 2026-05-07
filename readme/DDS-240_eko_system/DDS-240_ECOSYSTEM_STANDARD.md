@@ -371,6 +371,40 @@ delta = current_value - previous_value
 
 Этот раздел является перспективным направлением индустриализации, а не обязательным условием текущего доведения плат до промышленного стандарта. Motion, Fluidics, Thermo и новые Executor-платы могут закрывать текущий industrial checklist с локальной реализацией, если она соответствует этому стандарту, проходит сборку и физические CAN-тесты. При этом новый код нужно писать с такими границами, чтобы общий transport/service слой можно было вынести позже без изменения CAN-контракта.
 
+Перспективный единый каркас Executor-платы:
+
+```text
+RTOS tasks:
+- task_can_handler
+- task_dispatcher
+- task_<domain>_controller
+- task_watchdog
+
+Common/local modules:
+- app_config
+- app_queues
+- can_protocol / can_transport
+- app_watchdog
+- app_flash
+- device_mapping
+- diagnostics / status
+- safe_state
+- <domain>_driver
+```
+
+Единым должен быть каркас: CAN transport, dispatcher, service-команды, watchdog-supervisor, diagnostics/status, Flash/config policy, device mapping и safe-state policy. Различаться должны только доменный контроллер, драйверы железа, конкретная карта устройств и физическая реализация safe-state.
+
+Примеры доменной подстановки:
+
+| Executor | Доменная задача | Драйверы/модули домена |
+|----------|-----------------|------------------------|
+| Motion | `task_motion_controller` | `motion_driver`, `tmc2209_driver`, motion mapping |
+| Fluidics | `task_pump_controller` | `pumps_valves_gpio`, pump/valve mapping, finite timers |
+| Thermo | `task_temp_monitor` | `ds18b20`, temperature mapping |
+| Sensors | `task_sensor_controller` | `sensor_driver`, position sensor mapping |
+
+Дополнительные задачи допускаются только при физической необходимости домена. Пример: отдельный manager для TMC2209 у Motion или будущий ADC/DMA service mode у Sensors. Такие задачи не меняют общий executor-каркас и должны быть явно обоснованы в ТЗ конкретной платы.
+
 Перспективный набор common-модулей:
 
 *   `dds240_can_codec` - чистый HAL-free слой разборки/сборки 29-bit CAN ID и payload ответов.

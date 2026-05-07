@@ -1,84 +1,87 @@
-# Next Session Prompt: Motion Board Testing
+# Next Session Prompt: Thermo Executor Refactoring
 
-Рабочая директория:
+Рабочие директории:
 
 ```text
+Дирижер:
 /home/andrey/STM32CubeIDE/workspace_1.19.0/STM32H723_mother_board
+
+Thermo Executor:
+/home/andrey/STM32CubeIDE/workspace_1.19.0/STM32F103_temp_sensors
 ```
 
-Продолжаем проект `STM32H723_mother_board`. Текущая контрольная точка зафиксирована в:
+## Контрольная точка
 
-- `readme/Report_20260409_Integration.md`, раздел 12: `Ревизия 2.0 (22 апреля 2026 г.): CANable E2E стенд без реальных исполнителей`
-- `readme/Implementation_Plan_20260409_Integration.md`, этапы 5-6
+Текущий блок рефакторинга Дирижера закрыт.
 
-Что уже подтверждено:
+Подтверждено:
 
-- Дирижер STM32H723 работает с CANable/SocketCAN на реальной CAN-шине.
-- Неверные CAN-пины на МК исправлены; после этого FDCAN TX/RX заработал.
-- `test_main_processes.py` полностью PASS через цепочку:
-
-```text
-Host USB -> Conductor -> CAN fake executors -> Conductor -> Host
-```
-
-- `App_user/can_test.py` имеет режим:
+- Motion Executor и Fluidics Executor считаются приведенными к общей экосистеме DDS-240.
+- Дирижер приведен к текущему контракту Motion/Fluidics.
+- Проект Дирижера собирался инженером после внесенных правок.
+- CANable fake-executor regression PASS:
 
 ```bash
 python3 App_user/can_test.py --can-only-responder -c can0
+python3 App_user/test_main_processes.py
 ```
 
-Он эмулирует Motion `0x20` и Fluidics `0x30`, отвечает `ACK/DONE`.
-
-Проверенные high-level Host-команды:
+Проверенная цепочка:
 
 ```text
-INIT                  0x1002
-GET_STATUS            0x1000
-SAMPLE_ROTATE         0x5110
-DISPENSER_ASPIRATE    0x2100
-DISPENSER_DISPENSE    0x2200
-REAGENT_ROTATE        0x5000
-MIXER_MIX             0x3100
-PHOTOMETER_SCAN_SINGLE 0x6100
-DISPENSER_WASH        0x2000
-WASH_STATION_FILL     0x4100
-WASH_STATION_WASH     0x4000
+Host USB -> Conductor -> CAN fake Motion/Fluidics -> Conductor -> Host
 ```
 
-Подтвержденный CAN routing:
+Ключевые подтвержденные изменения Дирижера:
 
-```text
-Motion   0x20: HOME/ROTATE/START_CONTINUOUS/STOP, channels 0..7
-Fluidics 0x30: PUMP_START/PUMP_STOP, channels 10/11
-```
+- parser хранит Host payload без физического расчета;
+- физика выполняется на границе `JobManager/translator/calibrator`;
+- насосные действия выполняются finite-командой `PUMP_RUN_DURATION`;
+- `MIXER_MIX` использует finite Fluidics ch 12 для силовой лопатки;
+- реакционный диск используется как общий механизм подвода `cuvette` для wash/photometer scenarios;
+- `ParamSource_t` нормализован в сторону смысловых источников устройства.
 
-`GET_STATUS` после INIT:
+## Документы текущего состояния
 
-```text
-state=0x02
-last_error=0x0000
-```
+Читать перед стартом:
 
-Открытые ограничения:
-
-- Реальные исполнители еще не проверялись.
-- DATA/Thermo/Warm Finger и Big-Endian DATA path не закрыты.
-- `test_main_processes.py` пока предупреждает из-за старого ожидания логов `ID:...`; нужно обновить ожидания на новый формат `Phys:<node>:<channel>`.
-
-Следующая задача:
-
-Переключаемся на тестирование реальной платы шаговых двигателей Motion. Нужно читать стандарты:
-
-- `readme/DDS-240_eko_system/CONDUCTOR_INTEGRATION_GUIDE.md`, раздел Motion
+- `readme/Report_20260505_Conductor_Refactoring.md`
+- `readme/Implementation_Plan_20260505_Conductor_Refactoring.md`
 - `readme/DDS-240_eko_system/DDS-240_ECOSYSTEM_STANDARD.md`
-- `readme/DDS-240_eko_system/dds240_global_config.h`
-- `readme/DDS-240_eko_system/can_protocol_step_motors.h`
+- `readme/DDS-240_eko_system/CONDUCTOR_INTEGRATION_GUIDE.md`
+- `readme/DDS-240_eko_system/Technical_Assignment_20260507_Sensor_Position_Executor.md`
 
-Цель следующей работы:
+Новая документация по Sensor Executor уже создана, но код Sensor Executor пока не реализован.
 
-1. Проверить/довести Motion-плату до стандарта DDS-240.
-2. Прогнать прямые SocketCAN-тесты Motion: `GET_DEVICE_INFO`, `GET_STATUS`, `HOME`, `ROTATE`, `START_CONTINUOUS`, `STOP`, negative/NACK tests.
-3. Подключить реальную Motion `0x20` к Дирижеру вместо fake Motion responder.
-4. Оставить fake Fluidics `0x30` при необходимости через `can_test.py --can-only-responder`, либо добавить режим selective fake nodes.
-5. После успешного Motion-теста обновить отчеты и план.
+## Следующая задача
 
+Переходим к аудиту и рефакторингу Thermo Executor:
+
+```text
+/home/andrey/STM32CubeIDE/workspace_1.19.0/STM32F103_temp_sensors
+```
+
+Цель:
+
+1. Сравнить Thermo Executor с общей экосистемой DDS-240.
+2. Проверить RTOS-архитектуру: `task_can_handler`, `task_dispatcher`, `task_temp_monitor`, watchdog baseline.
+3. Проверить CAN transport: 29-bit Extended ID, strict `DLC=8`, ACK/DATA/DONE ordering.
+4. Проверить service-команды `0xF001..0xF007`.
+5. Проверить `GET_STATUS` и диагностические метрики.
+6. Проверить `app_flash` и mapping DS18B20.
+7. Определить, что уже соответствует стандарту, а что требует блочного рефакторинга.
+
+## Важные ограничения
+
+- Не менять код Thermo до первичного аудита и согласования плана.
+- Не переносить механически архитектуру Motion/Fluidics, если доменная специфика Thermo требует отличий.
+- Общий каркас должен быть единым, но доменная логика DS18B20 остается специфичной.
+- Отчеты вести кратко: рабочий журнал, ключевые решения, результаты сборки/тестов.
+
+## Начальный вопрос для следующей сессии
+
+Начать с чтения структуры проекта Thermo и сравнения с:
+
+- `DDS-240_ECOSYSTEM_STANDARD.md`;
+- разделом Thermo в `CONDUCTOR_INTEGRATION_GUIDE.md`;
+- текущим `dds240_global_config.h`.

@@ -449,3 +449,4 @@ source_addr, command_code, ch_idx
 | 2026-05-06 | `[x]` | Проверен Host API раздел `0x70xx`: `REACTION_ROTATE` требует `cuvette,position`; кодовый блок отложен до фиксации смещений рабочих позиций реакционного диска. |
 | 2026-05-06 | `[x]` | Блок `MIXER_MIX` скорректирован: Host-поля сохраняются в parser, шаги XY/Z рассчитываются в `JobManager` через смысловые `PARAM_SOURCE_MIXER_*`. |
 | 2026-05-06 | `[x]` | CANable fake-executor E2E PASS после коррекции миксера: `MIXER_MIX` выполняет XY, Z down, `RUN_PUMP_DURATION` Fluidics ch 12, Z up и home XY. |
+| 2026-05-07 | `[x]` | Текущий блок Дирижера закрыт перед переходом к Thermo: Motion/Fluidics считаются приведенными к экосистеме, Дирижер прошел fake-executor regression, Sensor Executor зафиксирован отдельным ТЗ и интеграционным разделом. |
