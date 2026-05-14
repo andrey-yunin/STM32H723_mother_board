@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include "Dispatcher/can_packer.h"
 
+
 #define MAX_DISCOVERED_NODES    8
 
 /**
@@ -49,6 +50,9 @@ bool ServiceManager_CheckInventory(uint8_t modules_mask);
  * @param node_id Физический адрес платы (напр. 0x20, 0x30, 0x40)
  */
 bool ServiceManager_IsNodeOnline(uint8_t node_id);
+
+
+void ServiceManager_Run(void);
 
 
 #endif /* INC_DISPATCHER_SERVICE_MANAGER_H_ */

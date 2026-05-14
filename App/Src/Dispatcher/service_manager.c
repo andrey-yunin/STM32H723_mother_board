@@ -11,6 +11,8 @@
 #include "main.h"             // Для HAL_GetTick()
 #include "Dispatcher/device_mapping.h"
 #include <string.h>
+#include "Dispatcher/can_response_router.h"
+
 
 static DeviceNode_t g_inventory[MAX_DISCOVERED_NODES];
 static uint8_t g_nodes_count = 0;
@@ -31,6 +33,20 @@ void ServiceManager_StartDiscovery(void)
 
     // Рассылаем GetInfo на Broadcast (NodeID 0x00)
     Packer_CreateGetInfoMsg(CAN_ADDR_BROADCAST, &msg);
+
+    /*
+     * Первый этап router-а держит route table single-writer: внешний Register
+     * не меняет состояние маршрутов. Service-route откроется автоматически,
+     * когда router получит ACK F001 от конкретного source NodeID.
+     */
+    CanResponseRouter_Register(TX_OWNER_SERVICE_INTERNAL,
+                                 CAN_ADDR_BROADCAST,
+                                 CAN_CMD_SRV_GET_INFO,
+                                 0,
+                                 false,
+                                 0,
+                                 0);
+
     xQueueSend(can_tx_queue_handle, &msg, 0);
 }
 
@@ -104,6 +120,53 @@ bool ServiceManager_IsNodeOnline(uint8_t node_id) {
 	return false;
 }
 
+void ServiceManager_Run(void)
+{
+	CanRoutedResponse_t routed;
 
+	while (xQueueReceive(can_service_rx_queue_handle, &routed, 0) == pdPASS) {
+		CAN_Response_t response = routed.parsed;
+		uint16_t service_cmd = routed.context_command_code;
+
+		/*
+		 * Service DATA не несет универсальный command_code.
+		 * Команду service transaction дает router context:
+		 * ACK F001/F004/F007 -> DATA... -> DONE.
+		 */
+		if (response.msg_type == CAN_MSG_TYPE_DATA_DONE_LOG &&
+			response.sub_type == CAN_SUB_TYPE_DATA) {
+
+			switch (service_cmd) {
+				case CAN_CMD_SRV_GET_INFO:
+					/*
+					 * F001 DATA format:
+					 * payload.raw[0] = DeviceType
+					 * payload.raw[1] = FW major
+					 * payload.raw[2] = FW minor
+					 * payload.raw[3] = channel count / hw info
+					 * Остальные DATA кадры UID/строка версии обработаем
+					 * в service-window блоке.
+					 */
+					if (!ServiceManager_IsNodeOnline(response.source_addr)) {
+						response.command_code = CAN_CMD_SRV_GET_INFO;
+						response.command_code_valid = true;
+						ServiceManager_UpdateNode(&response);
+					}
+					break;
+
+				case 0xF004:
+					/* GET_UID будет обработан в следующем service-window блоке. */
+					break;
+
+				case 0xF007:
+					/* GET_STATUS metrics будут обработаны в следующем service-window блоке. */
+					break;
+
+				default:
+					break;
+			}
+		}
+	}
+}
 
 

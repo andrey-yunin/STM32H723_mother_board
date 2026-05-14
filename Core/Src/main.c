@@ -34,6 +34,8 @@
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
+#include "Dispatcher/can_response_router.h"
+
 
 
 /* USER CODE END Includes */
@@ -109,6 +111,8 @@ const osSemaphoreAttr_t usb_tx_sem_attributes = {
 QueueHandle_t usb_rx_queue_handle;
 QueueHandle_t usb_tx_queue_handle;
 QueueHandle_t can_rx_queue_handle;
+QueueHandle_t can_job_rx_queue_handle;
+QueueHandle_t can_service_rx_queue_handle;
 QueueHandle_t can_tx_queue_handle;
 QueueHandle_t log_queue_handle;
 
@@ -207,6 +211,8 @@ int main(void)
 // Элемент очереди — абстрактный CAN_Message_t (can_packer.h).
 // task_can_handler конвертирует в HAL-формат перед отправкой.
 can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, sizeof(CAN_Message_t));
+can_job_rx_queue_handle = xQueueCreate(APP_CAN_JOB_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
+can_service_rx_queue_handle = xQueueCreate(APP_CAN_SERVICE_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
 can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, sizeof(CAN_Message_t));
 
 

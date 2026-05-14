@@ -46,18 +46,6 @@ static uint16_t unpack_u16_le(const uint8_t* src)
 }
 
 /**
- * @brief Вспомогательная функция: Распаковка uint32_t из Little-Endian
- */
-static uint32_t unpack_u32_le(const uint8_t* src)
-{
-	return (uint32_t)(src[0] |
-			((uint32_t)src[1] << 8) |
-			((uint32_t)src[2] << 16) |
-			((uint32_t)src[3] << 24));
-}
-
-
-/**
  * @brief Унифицированное заполнение Payload (Директива 2.0)
  * Структура [8 байт]: [0-1] CMD, [2] CH, [3-6] PARAM, [7] RSV
  */
@@ -243,6 +231,7 @@ bool Packer_ParseCanResponse(const CAN_Message_t* in_msg, CAN_Response_t* out_re
 			if (in_msg->dlc < 4) return false;
 			out_response->command_code = unpack_u16_le(&in_msg->data[0]);
 			out_response->error_code   = unpack_u16_le(&in_msg->data[2]);
+			out_response->command_code_valid = true;
 			break;
 
 		case CAN_MSG_TYPE_DATA_DONE_LOG:
@@ -256,27 +245,42 @@ bool Packer_ParseCanResponse(const CAN_Message_t* in_msg, CAN_Response_t* out_re
 					// Сигнал физического завершения (Моторы / Насосы)
 					if (in_msg->dlc < 4) return false;
 					out_response->command_code = unpack_u16_le(&in_msg->data[1]);
+					out_response->command_code_valid = true;
 					out_response->ch_idx       = in_msg->data[3];
 					break;
 
 				case CAN_SUB_TYPE_DATA:
-					// Передача измерений (Термодатчики / Позиция моторов)
-					if (in_msg->dlc < 4) return false;
-					out_response->command_code = unpack_u16_le(&in_msg->data[1]);
-					out_response->ch_idx       = in_msg->data[3];
+					/*
+					 * Общий DATA format DDS-240:
+					 * [0] subtype DATA
+					 * [1] sequence/info
+					 * [2..7] command-defined data payload
+					 *
+					 * DATA не обязан содержать command_code. Команда определяется
+					 * transaction context-ом: ACK X -> DATA... -> DONE X.
+					 */
 
-					// Извлекаем 4 байта данных (если есть)
-					if (in_msg->dlc >= 8) {
-						out_response->payload.val32 = unpack_u32_le(&in_msg->data[4]);
-						out_response->data_len = 4;
+					if (in_msg->dlc < 2) return false;
+
+					out_response->command_code = 0;
+					out_response->command_code_valid = false;
+					out_response->data_info = in_msg->data[1];
+
+					out_response->data_len = in_msg->dlc - 2;
+					if (out_response->data_len > 6) {
+						out_response->data_len = 6;
 						}
-					else {
-						// Обработка коротких пакетов данных (например, 2 байта температуры)
-						out_response->data_len = in_msg->dlc - 4;
-						for (uint8_t i = 0; i < out_response->data_len; i++) {
-							out_response->payload.raw[i] = in_msg->data[4 + i];
-							}
-						}
+
+					memcpy(out_response->payload.raw, &in_msg->data[2], out_response->data_len);
+
+					/*
+					 * Для доменов, где первый data byte является channel/sensor index
+					 * (Thermo 0x9010/0x9011), ch_idx заполняется как удобное поле.
+					 * Для service DATA это поле не имеет универсального смысла.
+					 */
+
+					out_response->ch_idx = (out_response->data_len > 0) ? out_response->payload.raw[0] : 0;
+
 					break;
 
 				case CAN_SUB_TYPE_LOG:

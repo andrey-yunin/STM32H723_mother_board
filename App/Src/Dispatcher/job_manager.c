@@ -10,6 +10,7 @@
 #include "Dispatcher/calibrator.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/can_packer.h"
+#include "Dispatcher/can_response_router.h"
 #include "Dispatcher/device_mapping.h"
 #include "Dispatcher/system_mapping.h"
 #include "Dispatcher/service_manager.h"
@@ -358,13 +359,12 @@ static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t
 void JobManager_Run(void)
 {
 	// --- 1. Обработка входящих CAN-ответов от исполнителей (или имитатора) ---
-	CAN_Message_t rx_msg;
-	while (xQueueReceive(can_rx_queue_handle, &rx_msg, 0) == pdPASS) {
-		CAN_Response_t response;
-		if (!Packer_ParseCanResponse(&rx_msg, &response)) {
-			Dispatcher_SendUsbResponse("WARNING: Invalid CAN RX frame, skipping.");
-			continue;
-			}
+	CanRoutedResponse_t routed;
+	while (xQueueReceive(can_job_rx_queue_handle, &routed, 0) == pdPASS) {
+		CAN_Response_t response = routed.parsed;
+		uint16_t effective_cmd = routed.context_valid
+				? routed.context_command_code
+				: response.command_code;
 
 		switch (response.msg_type) {
 			case CAN_MSG_TYPE_ACK:
@@ -395,10 +395,6 @@ void JobManager_Run(void)
 
 					case CAN_SUB_TYPE_DONE:
 
-						if (response.command_code == CAN_CMD_SRV_GET_INFO) {
-							ServiceManager_UpdateNode(&response);
-							}
-
 						// DONE = исполнитель завершил действие → продвигаем задание
 						for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 							if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
@@ -418,7 +414,7 @@ void JobManager_Run(void)
 
 
 						// Внутренняя логика трансляции в зависимости от команды
-						if (response.command_code == 0x9011 || response.command_code == 0x8000) {
+						if (effective_cmd == 0x9011 || effective_cmd == 0x8000) {
 
 							// Температура: [ID(1)][Temp_H(1)][Temp_L(1)][Status(1)]
 							host_data[0] = response.ch_idx;
@@ -428,7 +424,7 @@ void JobManager_Run(void)
 							host_len = 4;
 							}
 
-						else if (response.command_code == 0x1000) {
+						else if (effective_cmd == 0x1000) {
 							// Статус: [Status(1)][Err_H(1)][Err_L(1)]
 							host_data[0] = response.payload.raw[0];
 							host_data[1] = response.payload.raw[2]; // Error MSB
@@ -449,7 +445,7 @@ void JobManager_Run(void)
 							}
 
 						// Отправка Хосту в бинарном формате CM> (Тип 0x03)
-						Dispatcher_SendData(response.command_code, 0x03, 0x0000, host_data, host_len);
+						Dispatcher_SendData(effective_cmd, 0x03, 0x0000, host_data, host_len);
 						break;
 						}
 

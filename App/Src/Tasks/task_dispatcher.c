@@ -15,6 +15,8 @@
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/job_manager.h"
 #include "task_watchdog.h"
+#include "Dispatcher/can_response_router.h"
+
 
 /**
  * @brief GLOBAL SYSTEM STATE */
@@ -48,8 +50,14 @@ void app_start_task_dispatcher(void *argument)
 			g_system_state = SYS_STATE_INITIALIZING;
 			Dispatcher_SendUsbResponse("INFO: System starting. Initializing hardware...");
 			
-			// Инициализация и запуск Discovery перед первой операцией
+			// Инициализация runtime-состояния менеджеров до discovery и первого Host job.
+			// Router должен быть очищен до приема service-ответов F001/F004/F007.
+
+			CanResponseRouter_Init();
 			ServiceManager_Init();
+			JobManager_Init();
+
+
 			for (uint8_t i = 0; i < 5; i++) {
 				ServiceManager_StartDiscovery();
 				osDelay(250);
@@ -172,7 +180,6 @@ SystemState_t GetSystemState(void)
 {
 	return g_system_state;
 }
-
 
 
 

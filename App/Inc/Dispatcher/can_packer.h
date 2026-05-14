@@ -42,6 +42,8 @@ typedef struct {
  * Позволяет Диспетчеру (JobManager) принимать решения на основе типа ответа.
  */
 typedef struct {
+	bool command_code_valid;  // true для ACK/NACK/DONE, false для DATA без cmd
+	uint8_t data_info;        // byte[1] DATA frame: sequence/info
 	uint8_t  msg_type;      // Тип из CAN ID: ACK (1), NACK (2), DATA_DONE_LOG (3)
     uint8_t  source_addr;   // NodeID отправителя (0x20, 0x30, 0x40)
     uint16_t command_code;  // Код команды (из байт 0-1 или 1-2 payload)
@@ -50,13 +52,12 @@ typedef struct {
     uint8_t  ch_idx;        // Индекс физического канала (0-15)
 
     union {
-    	uint8_t  raw[4];    // Сырые байты данных (для DATA)
+    	uint8_t  raw[6];    // Сырые байты данных (для DATA)
     	uint32_t val32;     // Универсальное 32-битное значение (для температуры, шагов и т.д.)
     	char     log[7];    // Текстовое сообщение (для LOG)
     	} payload;
     	uint8_t  data_len;      // Длина полезных данных в payload
 } CAN_Response_t;
-
 
 
 // ============================================================================
