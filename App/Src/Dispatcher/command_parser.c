@@ -156,6 +156,20 @@ const DirectCommandDescriptor_t direct_command_table[] = {
 				.max_params_len = 1,
 				.handler = handle_thermo_get_temp
 				},
+
+		// 0x9010 - SENSOR_GET_ALL_TEMPS
+		{.command_code = 0x9010,
+				.min_params_len = 0,
+				.max_params_len = 0,
+				.handler = handle_sensor_get_all_temps
+				},
+
+		// 0x9011 - SENSOR_GET_TEMP
+		{.command_code = 0x9011,
+				.min_params_len = 1,
+				.max_params_len = 1,
+				.handler = handle_sensor_get_temp
+				},
 		};
 
 // Определяем количество команд в таблице

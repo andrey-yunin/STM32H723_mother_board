@@ -131,6 +131,15 @@ typedef struct {
 } ParsedArgs_WashStationFill;
 
 
+/**
+ * @brief Разобранные параметры для SENSOR_GET_TEMP (0x9011).
+ */
+typedef struct {
+	uint8_t sensor_id;  // Host API: sensor_id 1..7
+} ParsedArgs_SensorGetTemp;
+
+
+
 
 // --- КОНЕЦ НОВЫХ СТРУКТУР ---
 
@@ -229,6 +238,8 @@ typedef struct {
 			ParsedArgs_MixerHome mixer_home;
 			ParsedArgs_PhotometerScanSingle photometer_scan_single; // <-- НОВОЕ ПОЛЕ ДЛЯ PHOTOMETER_SCAN_SINGLE added 16/02/2026
 			ParsedArgs_WashStationFill wash_station_fill; // <-- added 17/02/2026 Новое поле для WASH_STATION_FILL (0x4100)
+			ParsedArgs_SensorGetTemp sensor_get_temp;// <-- added 15/05jr/2026
+
 			// Здесь будут добавляться другие команды
 			} args;
 } UniversalCommand_t;

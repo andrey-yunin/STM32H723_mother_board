@@ -28,9 +28,10 @@ typedef enum {
  * raw    - исходный CAN frame.
  * parsed - результат общего parser-а.
  *
- * context_command_code - команда активной операции.
- * Для ACK/NACK/DONE она совпадает с parsed.command_code.
- * Для DATA она берется из active route, открытого предыдущим ACK.
+ * context_* - контекст активной операции.
+ * Для ACK/NACK/DONE command совпадает с parsed.command_code.
+ * Для DATA command/channel берутся из active route, зарегистрированного
+ * отправителем команды или открытого предыдущим ACK.
  */
 typedef struct {
 	CAN_Message_t raw;
@@ -39,8 +40,13 @@ typedef struct {
 	CanRxRoute_t route;
 
 	bool context_valid;
+	CanTxOwner_t context_owner;
 	uint8_t context_node_id;
 	uint16_t context_command_code;
+	uint8_t context_channel;
+	bool context_channel_valid;
+	uint32_t context_job_id;
+	uint16_t context_host_command_code;
 } CanRoutedResponse_t;
 
 void CanResponseRouter_Init(void);
@@ -52,6 +58,8 @@ bool CanResponseRouter_Register(CanTxOwner_t owner,
                                 bool channel_valid,
                                 uint32_t job_id,
                                 uint16_t host_command_code);
+
+void CanResponseRouter_CloseJob(uint32_t job_id);
 
 /*
  * Читает raw can_rx_queue_handle и раскладывает ответы в:

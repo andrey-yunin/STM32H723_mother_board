@@ -8,14 +8,21 @@
 #include "Dispatcher/can_response_router.h"
 #include "Dispatcher/can_packer.h"
 #include "shared_resources.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <string.h>
 
 #define ROUTER_TRACKED_ROUTES 8U
 
 typedef struct {
 	bool active;
+	CanTxOwner_t owner;
 	uint8_t node_id;
 	uint16_t command_code;
+	uint8_t channel;
+	bool channel_valid;
+	uint32_t job_id;
+	uint16_t host_command_code;
 	CanRxRoute_t route;
 } ActiveRoute_t;
 
@@ -23,11 +30,13 @@ typedef struct {
  * ВАЖНО О ПОТОКОБЕЗОПАСНОСТИ:
  *
  * g_active_routes является внутренним runtime-состоянием router-а.
- * На этом этапе таблицу меняет только CanResponseRouter_Run() из одного task context.
+ * Таблицу меняют:
+ * - CanResponseRouter_Register() при отправке low-level команды;
+ * - CanResponseRouter_Run() при ACK/DONE/NACK;
+ * - CanResponseRouter_CloseJob() при timeout/error/reset job-а.
  *
- * Если в будущем CanResponseRouter_Register() начнет изменять эту таблицу
- * из ServiceManager/JobManager или другой задачи, нужна синхронизация:
- * mutex/critical section либо route-registration queue.
+ * Эти вызовы могут приходить из разных task context, поэтому все обращения
+ * к таблице защищены короткими FreeRTOS critical sections.
  */
 static ActiveRoute_t g_active_routes[ROUTER_TRACKED_ROUTES];
 
@@ -49,48 +58,218 @@ static bool Router_IsServiceCommand(uint16_t command_code)
 	}
 }
 
-static ActiveRoute_t* Router_FindRoute(uint8_t node_id)
+static CanRxRoute_t Router_RouteForOwner(CanTxOwner_t owner)
+{
+	return (owner == TX_OWNER_SERVICE_INTERNAL)
+			? CAN_RX_ROUTE_SERVICE_INTERNAL
+			: CAN_RX_ROUTE_HOST_OPERATION;
+}
+
+static CanTxOwner_t Router_OwnerForCommand(uint16_t command_code)
+{
+	return Router_IsServiceCommand(command_code)
+			? TX_OWNER_SERVICE_INTERNAL
+			: TX_OWNER_HOST_OPERATION;
+}
+
+static bool Router_CommandMatches(const ActiveRoute_t* route,
+                                  uint8_t node_id,
+                                  uint16_t command_code)
+{
+	return route != NULL &&
+			route->active &&
+			route->node_id == node_id &&
+			route->command_code == command_code;
+}
+
+static ActiveRoute_t* Router_FindFreeRoute(void)
 {
 	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
-		if (g_active_routes[i].active &&
-			g_active_routes[i].node_id == node_id) {
+		if (!g_active_routes[i].active) {
 			return &g_active_routes[i];
-		}
+			}
 	}
 
 	return NULL;
 }
 
-static void Router_OpenRoute(uint8_t node_id,
-                             uint16_t command_code,
-                             CanRxRoute_t route_type)
+static ActiveRoute_t* Router_FindFirstByNodeCommand(uint8_t node_id,
+                                                    uint16_t command_code)
 {
-	ActiveRoute_t* route = Router_FindRoute(node_id);
-
-	if (route == NULL) {
-		for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
-			if (!g_active_routes[i].active) {
-				route = &g_active_routes[i];
-				break;
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		if (Router_CommandMatches(&g_active_routes[i], node_id, command_code)) {
+			return &g_active_routes[i];
 			}
 		}
-	}
 
-	if (route != NULL) {
-		route->active = true;
-		route->node_id = node_id;
-		route->command_code = command_code;
-		route->route = route_type;
-	}
+	return NULL;
 }
 
-static void Router_CloseRoute(uint8_t node_id, uint16_t command_code)
+static ActiveRoute_t* Router_FindExactRoute(uint8_t node_id,
+                                            uint16_t command_code,
+                                            uint8_t channel,
+                                            bool channel_valid)
 {
-	ActiveRoute_t* route = Router_FindRoute(node_id);
+	ActiveRoute_t* command_level_route = NULL;
 
-	if (route != NULL && route->command_code == command_code) {
-		memset(route, 0, sizeof(*route));
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		ActiveRoute_t* route = &g_active_routes[i];
+
+		if (!Router_CommandMatches(route, node_id, command_code)) {
+			continue;
+			}
+
+		if (route->channel_valid && channel_valid) {
+			if (route->channel == channel) {
+				return route;
+				}
+			continue;
+			}
+
+		if (!route->channel_valid) {
+			command_level_route = route;
+			}
 	}
+
+	return command_level_route;
+}
+
+static ActiveRoute_t* Router_FindUniqueByNode(uint8_t node_id, bool* ambiguous)
+{
+	ActiveRoute_t* found = NULL;
+
+	if (ambiguous != NULL) {
+		*ambiguous = false;
+		}
+
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		ActiveRoute_t* route = &g_active_routes[i];
+
+		if (!route->active || route->node_id != node_id) {
+			continue;
+			}
+
+		if (found != NULL) {
+			if (ambiguous != NULL) {
+				*ambiguous = true;
+				}
+			return NULL;
+			}
+
+		found = route;
+		}
+
+	return found;
+}
+
+static ActiveRoute_t* Router_FindUniqueByNodeChannel(uint8_t node_id,
+                                                     uint8_t channel,
+                                                     bool* ambiguous)
+{
+	ActiveRoute_t* found = NULL;
+
+	if (ambiguous != NULL) {
+		*ambiguous = false;
+		}
+
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		ActiveRoute_t* route = &g_active_routes[i];
+
+		if (!route->active ||
+				route->node_id != node_id ||
+				!route->channel_valid ||
+				route->channel != channel) {
+			continue;
+			}
+
+		if (found != NULL) {
+			if (ambiguous != NULL) {
+				*ambiguous = true;
+				}
+			return NULL;
+			}
+
+		found = route;
+		}
+
+	return found;
+}
+
+static ActiveRoute_t* Router_UpsertRoute(CanTxOwner_t owner,
+                                         uint8_t node_id,
+                                         uint16_t command_code,
+                                         uint8_t channel,
+                                         bool channel_valid,
+                                         uint32_t job_id,
+                                         uint16_t host_command_code)
+{
+	ActiveRoute_t* route = Router_FindExactRoute(node_id,
+	                                             command_code,
+	                                             channel,
+	                                             channel_valid);
+
+	if (route == NULL) {
+		route = Router_FindFreeRoute();
+		}
+
+	if (route != NULL) {
+		memset(route, 0, sizeof(*route));
+		route->active = true;
+		route->owner = owner;
+		route->node_id = node_id;
+		route->command_code = command_code;
+		route->channel = channel;
+		route->channel_valid = channel_valid;
+		route->job_id = job_id;
+		route->host_command_code = host_command_code;
+		route->route = Router_RouteForOwner(owner);
+		}
+
+	return route;
+}
+
+static void Router_CloseCommandRoutes(uint8_t node_id, uint16_t command_code)
+{
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		if (Router_CommandMatches(&g_active_routes[i], node_id, command_code)) {
+			memset(&g_active_routes[i], 0, sizeof(g_active_routes[i]));
+			}
+		}
+}
+
+static void Router_CloseDoneRoute(uint8_t node_id,
+                                  uint16_t command_code,
+                                  uint8_t channel)
+{
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		ActiveRoute_t* route = &g_active_routes[i];
+
+		if (!Router_CommandMatches(route, node_id, command_code)) {
+			continue;
+			}
+
+		if (!route->channel_valid || route->channel == channel) {
+			memset(route, 0, sizeof(*route));
+			return;
+			}
+		}
+}
+
+static void Router_CopyContextFromRoute(const ActiveRoute_t* route,
+                                        CanRoutedResponse_t* routed)
+{
+	if (route == NULL || routed == NULL) {
+		return;
+		}
+
+	routed->route = route->route;
+	routed->context_valid = true;
+	routed->context_owner = route->owner;
+	routed->context_command_code = route->command_code;
+	routed->context_channel = route->channel;
+	routed->context_channel_valid = route->channel_valid;
+	routed->context_job_id = route->job_id;
+	routed->context_host_command_code = route->host_command_code;
 }
 
 void CanResponseRouter_Init(void)
@@ -106,19 +285,44 @@ bool CanResponseRouter_Register(CanTxOwner_t owner,
                                 uint32_t job_id,
                                 uint16_t host_command_code)
 {
-	(void)owner;
-	(void)node_id;
-	(void)command_code;
-	(void)channel;
-	(void)channel_valid;
-	(void)job_id;
-	(void)host_command_code;
-
 	/*
-	 * Первый этап: внешний Register не пишет в route table.
-	 * Route открывается по фактическому ACK от Executor.
+	 * Broadcast service discovery получает ответы от реальных source NodeID.
+	 * Для него route создается по ACK каждого узла, а не по broadcast-адресу.
 	 */
-	return true;
+	if (node_id == CAN_ADDR_BROADCAST && !channel_valid) {
+		return true;
+		}
+
+	taskENTER_CRITICAL();
+	ActiveRoute_t* route = Router_UpsertRoute(owner,
+	                                           node_id,
+	                                           command_code,
+	                                           channel,
+	                                           channel_valid,
+	                                           job_id,
+	                                           host_command_code);
+	taskEXIT_CRITICAL();
+
+	return route != NULL;
+}
+
+void CanResponseRouter_CloseJob(uint32_t job_id)
+{
+	if (job_id == 0U) {
+		return;
+		}
+
+	taskENTER_CRITICAL();
+	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
+		ActiveRoute_t* route = &g_active_routes[i];
+
+		if (route->active &&
+				route->owner == TX_OWNER_HOST_OPERATION &&
+				route->job_id == job_id) {
+			memset(route, 0, sizeof(*route));
+			}
+		}
+	taskEXIT_CRITICAL();
 }
 
 void CanResponseRouter_Run(void)
@@ -138,98 +342,141 @@ void CanResponseRouter_Run(void)
 		routed.raw = rx_msg;
 		routed.parsed = response;
 		routed.context_node_id = response.source_addr;
+		routed.context_owner = Router_OwnerForCommand(response.command_code);
 
-		CanRxRoute_t route_type = CAN_RX_ROUTE_HOST_OPERATION;
-		uint16_t context_command_code = response.command_code;
-		bool context_valid = response.command_code_valid;
+		routed.route = CAN_RX_ROUTE_HOST_OPERATION;
+		routed.context_command_code = response.command_code;
+		routed.context_valid = response.command_code_valid;
 
+		taskENTER_CRITICAL();
 		if (response.msg_type == CAN_MSG_TYPE_ACK) {
-			route_type = Router_IsServiceCommand(response.command_code)
-					   ? CAN_RX_ROUTE_SERVICE_INTERNAL
-					   : CAN_RX_ROUTE_HOST_OPERATION;
+			ActiveRoute_t* active = Router_FindFirstByNodeCommand(response.source_addr,
+			                                                      response.command_code);
 
-			context_valid = true;
-			context_command_code = response.command_code;
+			if (active == NULL) {
+				CanTxOwner_t owner = Router_OwnerForCommand(response.command_code);
+				active = Router_UpsertRoute(owner,
+				                            response.source_addr,
+				                            response.command_code,
+				                            0,
+				                            false,
+				                            0,
+				                            0);
+				}
 
 			/*
-			 * ACK открывает active route для последующих DATA.
-			 * DATA не несет универсальный command_code и наследует команду отсюда.
+			 * ACK не несет channel. Если route уже был зарегистрирован отправителем
+			 * с channel context, сохраняем этот context; иначе открываем command-level
+			 * route для service/discovery или legacy sender-ов.
 			 */
-			Router_OpenRoute(response.source_addr,
-							 response.command_code,
-							 route_type);
+			if (active != NULL) {
+				Router_CopyContextFromRoute(active, &routed);
+				}
+			else {
+				routed.route = Router_RouteForOwner(Router_OwnerForCommand(response.command_code));
+				routed.context_valid = true;
+				routed.context_command_code = response.command_code;
+				}
 		}
 		else if (response.msg_type == CAN_MSG_TYPE_NACK) {
-			ActiveRoute_t* active = Router_FindRoute(response.source_addr);
+			ActiveRoute_t* active = Router_FindFirstByNodeCommand(response.source_addr,
+			                                                      response.command_code);
 
 			if (active != NULL) {
-				route_type = active->route;
+				Router_CopyContextFromRoute(active, &routed);
 			}
 			else {
-				route_type = Router_IsServiceCommand(response.command_code)
-						   ? CAN_RX_ROUTE_SERVICE_INTERNAL
-						   : CAN_RX_ROUTE_HOST_OPERATION;
+				routed.route = Router_RouteForOwner(Router_OwnerForCommand(response.command_code));
+				routed.context_valid = true;
+				routed.context_owner = Router_OwnerForCommand(response.command_code);
+				routed.context_command_code = response.command_code;
 			}
 
-			context_valid = true;
-			context_command_code = response.command_code;
-
-			Router_CloseRoute(response.source_addr, response.command_code);
+			/*
+			 * NACK не несет channel. Это command-level отказ, поэтому закрываем
+			 * все active routes с тем же node + command.
+			 */
+			Router_CloseCommandRoutes(response.source_addr, response.command_code);
 		}
 		else if (response.msg_type == CAN_MSG_TYPE_DATA_DONE_LOG) {
 			if (response.sub_type == CAN_SUB_TYPE_DATA) {
-				ActiveRoute_t* active = Router_FindRoute(response.source_addr);
+				bool ambiguous = false;
+				ActiveRoute_t* active = NULL;
 
-				if (active != NULL) {
-					route_type = active->route;
-					context_valid = true;
-					context_command_code = active->command_code;
+				/*
+				 * DATA не несет универсальный command_code. Сначала пробуем
+				 * найти unique route по node + channel, если payload[0] в этом
+				 * домене является channel/sensor index. Если это не помогло,
+				 * принимаем DATA только когда у node есть ровно один active route.
+				 */
+				if (response.data_len > 0U) {
+					active = Router_FindUniqueByNodeChannel(response.source_addr,
+					                                       response.ch_idx,
+					                                       &ambiguous);
+					}
+
+				if (active == NULL && !ambiguous) {
+					active = Router_FindUniqueByNode(response.source_addr, &ambiguous);
+					}
+
+				if (active != NULL && !ambiguous) {
+					Router_CopyContextFromRoute(active, &routed);
 				}
 				else {
 					/*
-					 * DATA без открытого ACK-контекста не должен продвигать
-					 * service или job. На этом этапе оставляем его в Host path;
-					 * следующий слой отфильтрует unexpected DATA по expected state.
+					 * DATA без однозначного context не должен продвигать
+					 * service или job.
 					 */
-					route_type = CAN_RX_ROUTE_HOST_OPERATION;
-					context_valid = false;
-					context_command_code = 0;
+					routed.route = CAN_RX_ROUTE_HOST_OPERATION;
+					routed.context_valid = false;
+					routed.context_command_code = 0;
 				}
 			}
 			else if (response.sub_type == CAN_SUB_TYPE_DONE) {
-				ActiveRoute_t* active = Router_FindRoute(response.source_addr);
+				ActiveRoute_t* active = Router_FindExactRoute(response.source_addr,
+				                                              response.command_code,
+				                                              response.ch_idx,
+				                                              true);
+
+				if (active == NULL) {
+					active = Router_FindFirstByNodeCommand(response.source_addr,
+					                                      response.command_code);
+					}
 
 				if (active != NULL) {
-					route_type = active->route;
+					Router_CopyContextFromRoute(active, &routed);
 				}
 				else {
-					route_type = Router_IsServiceCommand(response.command_code)
-							   ? CAN_RX_ROUTE_SERVICE_INTERNAL
-							   : CAN_RX_ROUTE_HOST_OPERATION;
+					routed.route = Router_RouteForOwner(Router_OwnerForCommand(response.command_code));
+					routed.context_valid = true;
+					routed.context_owner = Router_OwnerForCommand(response.command_code);
+					routed.context_command_code = response.command_code;
 				}
 
-				context_valid = true;
-				context_command_code = response.command_code;
+				routed.context_channel = response.ch_idx;
+				routed.context_channel_valid = true;
 
-				Router_CloseRoute(response.source_addr, response.command_code);
+				/*
+				 * DONE несет channel, поэтому закрывает только свою transaction.
+				 */
+				Router_CloseDoneRoute(response.source_addr,
+				                      response.command_code,
+				                      response.ch_idx);
 			}
 			else {
-				ActiveRoute_t* active = Router_FindRoute(response.source_addr);
+				bool ambiguous = false;
+				ActiveRoute_t* active = Router_FindUniqueByNode(response.source_addr,
+				                                                &ambiguous);
 
-				if (active != NULL) {
-					route_type = active->route;
-					context_valid = true;
-					context_command_code = active->command_code;
+				if (active != NULL && !ambiguous) {
+					Router_CopyContextFromRoute(active, &routed);
 				}
 			}
 		}
-
-		routed.route = route_type;
-		routed.context_valid = context_valid;
-		routed.context_command_code = context_command_code;
+		taskEXIT_CRITICAL();
 
 		QueueHandle_t target_queue =
-			(route_type == CAN_RX_ROUTE_SERVICE_INTERNAL)
+			(routed.route == CAN_RX_ROUTE_SERVICE_INTERNAL)
 				? can_service_rx_queue_handle
 				: can_job_rx_queue_handle;
 

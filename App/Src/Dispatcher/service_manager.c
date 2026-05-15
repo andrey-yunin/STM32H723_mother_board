@@ -35,9 +35,9 @@ void ServiceManager_StartDiscovery(void)
     Packer_CreateGetInfoMsg(CAN_ADDR_BROADCAST, &msg);
 
     /*
-     * Первый этап router-а держит route table single-writer: внешний Register
-     * не меняет состояние маршрутов. Service-route откроется автоматически,
-     * когда router получит ACK F001 от конкретного source NodeID.
+     * Broadcast discovery отвечает с реальных source NodeID.
+     * Поэтому router не держит route на broadcast-адресе: service-route
+     * откроется по ACK F001 от каждого конкретного узла.
      */
     CanResponseRouter_Register(TX_OWNER_SERVICE_INTERNAL,
                                  CAN_ADDR_BROADCAST,
@@ -168,5 +168,4 @@ void ServiceManager_Run(void)
 		}
 	}
 }
-
 

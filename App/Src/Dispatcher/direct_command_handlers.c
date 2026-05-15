@@ -12,12 +12,27 @@
 #include "task_dispatcher.h"
 #include "can_packer.h"
 
+#define CONDUCTOR_FW_VERSION_MAJOR      1U
+#define CONDUCTOR_FW_VERSION_MINOR      0U
+#define CONDUCTOR_FW_VERSION_BUILD      42U
+#define CONDUCTOR_FW_BUILD_DATE         "2026-04-13"
+
+#define CONDUCTOR_PLACEHOLDER_YEAR      2026U
+#define CONDUCTOR_PLACEHOLDER_MONTH     4U
+#define CONDUCTOR_PLACEHOLDER_DAY       13U
+#define CONDUCTOR_PLACEHOLDER_HOUR      12U
+#define CONDUCTOR_PLACEHOLDER_MINUTE    0U
+#define CONDUCTOR_PLACEHOLDER_SECOND    0U
+
+
+
+
 /**
-      * @brief Handler for the direct command GET_STATUS (0x1000)
-      * @param command_code The command code
-      * @param params Pointer to parameters (not used for this command)
-      * @param params_len Length of parameters (not used for this command)
-     */
+ * @brief Handler for the direct command GET_STATUS (0x1000)
+ * @param command_code The command code
+ * @param params Pointer to parameters (not used for this command)
+ * @param params_len Length of parameters (not used for this command)
+ */
 void handle_get_status(uint16_t command_code, const uint8_t* params, uint16_t params_len)
 {
 	// Get the current system state
@@ -39,19 +54,75 @@ void handle_get_status(uint16_t command_code, const uint8_t* params, uint16_t pa
 
 }
 
+
+/*
+ * Возвращает версию прошивки Дирижера.
+ *
+ * Формат Host DATA по full_examples.md:
+ * [major:U8][minor:U8][build:U16 BE][date:ASCII "YYYY-MM-DD"].
+ * Parser уже отправил ACK; handler отправляет DATA и закрывает команду DONE.
+ */
+
+
+
+
 void handle_get_version(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	// Формат ответа согласно commands.md: [Major(1)][Minor(1)][Build(2)][Date(8)]
-	uint8_t ver_data[12] = {1, 0, 0, 42, '2', '0', '2', '6', '0', '4', '1', '3'};
-	Dispatcher_SendData(cmd_code, 0x03, 0x0000, ver_data, 12);
+	(void)params;
+	(void)len;
+
+	uint16_t build = CONDUCTOR_FW_VERSION_BUILD;
+	const char build_date[] = CONDUCTOR_FW_BUILD_DATE;
+
+	uint8_t ver_data[14] = {
+		(uint8_t)CONDUCTOR_FW_VERSION_MAJOR,
+		(uint8_t)CONDUCTOR_FW_VERSION_MINOR,
+		(uint8_t)((build >> 8) & 0xFFU),
+		(uint8_t)(build & 0xFFU),
+		(uint8_t)build_date[0],
+		(uint8_t)build_date[1],
+		(uint8_t)build_date[2],
+		(uint8_t)build_date[3],
+		(uint8_t)build_date[4],
+		(uint8_t)build_date[5],
+		(uint8_t)build_date[6],
+		(uint8_t)build_date[7],
+		(uint8_t)build_date[8],
+		(uint8_t)build_date[9]
+	};
+
+	Dispatcher_SendData(cmd_code, 0x03, 0x0000, ver_data, sizeof(ver_data));
+	Dispatcher_SendDone(cmd_code, 0x0000);
 }
 
+/*
+ * Возвращает дату и время Дирижера.
+ *
+ * Формат Host DATA по commands.md:
+ * [year:U16 BE][month:U8][day:U8][hour:U8][minute:U8][second:U8].
+ * Parser уже отправил ACK; handler отправляет DATA и закрывает команду DONE.
+ */
 void handle_get_datetime(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	// Заглушка: 2026-04-13 12:00:00
-	uint8_t dt_data[7] = {0x07, 0xEA, 4, 13, 12, 0, 0}; // Year(2), M, D, H, M, S
-	Dispatcher_SendData(cmd_code, 0x03, 0x0000, dt_data, 7);
+	(void)params;
+	(void)len;
+
+	uint16_t year = (uint16_t)CONDUCTOR_PLACEHOLDER_YEAR;
+
+	uint8_t dt_data[7] = {
+		(uint8_t)((year >> 8) & 0xFFU),
+		(uint8_t)(year & 0xFFU),
+		(uint8_t)CONDUCTOR_PLACEHOLDER_MONTH,
+		(uint8_t)CONDUCTOR_PLACEHOLDER_DAY,
+		(uint8_t)CONDUCTOR_PLACEHOLDER_HOUR,
+		(uint8_t)CONDUCTOR_PLACEHOLDER_MINUTE,
+		(uint8_t)CONDUCTOR_PLACEHOLDER_SECOND
+	};
+
+	Dispatcher_SendData(cmd_code, 0x03, 0x0000, dt_data, sizeof(dt_data));
+	Dispatcher_SendDone(cmd_code, 0x0000);
 }
+
 
 void handle_emergency_stop(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
@@ -86,8 +157,20 @@ void handle_thermo_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t l
 }
 
 
+void handle_sensor_get_all_temps(uint16_t cmd_code, const uint8_t* params, uint16_t len)
+{
+	(void)params;
+	(void)len;
 
+	Dispatcher_SendError(cmd_code, 0x000A);
+	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_ALL_TEMPS is not connected to HOST_DIRECT yet.");
+}
 
+void handle_sensor_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t len)
+{
+	(void)params;
+	(void)len;
 
-
-
+	Dispatcher_SendError(cmd_code, 0x000A);
+	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_TEMP is not connected to HOST_DIRECT yet.");
+}
