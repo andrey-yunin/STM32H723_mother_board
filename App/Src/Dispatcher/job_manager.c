@@ -6,27 +6,101 @@
  */
 
 #include "Dispatcher/job_manager.h"
-#include "Dispatcher/param_translator.h"
+#include "Dispatcher/recipe_store.h"
+#include "Dispatcher/recipe_executor_action_builder.h"
 #include "Dispatcher/calibrator.h"
 #include "Dispatcher/dispatcher_io.h"
-#include "Dispatcher/can_packer.h"
 #include "Dispatcher/can_response_router.h"
-#include "Dispatcher/device_mapping.h"
 #include "Dispatcher/system_mapping.h"
-#include "Dispatcher/service_manager.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include "main.h" // Для HAL_GetTick()
+
+// --- Внутренние типы данных ---
+
+typedef enum {
+    JOB_STATUS_IDLE = 0,
+    JOB_STATUS_RUNNING = 1,
+    JOB_STATUS_COMPLETED = 3,
+    JOB_STATUS_TIMEOUT = 4,
+    JOB_STATUS_ERROR = 5
+} JobStatus_t;
+
+typedef enum {
+    JOB_RESPONSE_DONE_ONLY = 0,
+    JOB_RESPONSE_DATA_THEN_DONE,
+    JOB_RESPONSE_MULTI_DATA_THEN_DONE
+} JobResponsePolicy_t;
+
+typedef enum {
+    EXEC_TX_SENT = 1,
+    EXEC_TX_ACKED,
+    EXEC_TX_DATA_SEEN,
+    EXEC_TX_DONE,
+    EXEC_TX_NACK,
+    EXEC_TX_ACK_TIMEOUT,
+    EXEC_TX_OPERATION_TIMEOUT
+} ExecutorTransactionState_t;
+
+typedef struct {
+    bool active;
+    uint32_t job_id;
+
+    // Host command, на которую Дирижер формирует Host DATA/DONE.
+    uint16_t host_command_code;
+
+    // Low-level command, по которой исполнитель отвечает ACK/DATA/DONE/NACK.
+    uint16_t low_command_code;
+
+    uint8_t expected_node_id;
+    uint8_t expected_channel;
+    bool channel_valid;
+
+    JobResponsePolicy_t response_policy;
+    ExecutorTransactionState_t state;
+
+    uint32_t sent_time_ms;
+    uint32_t ack_timeout_ms;
+    uint32_t operation_timeout_ms;
+
+    uint16_t last_error_code;
+    uint8_t data_count;
+} ExecutorTransaction_t;
+
+typedef enum {
+    JOB_INTERNAL_ACTION_WAIT_MS = 0
+} JobInternalActionType_t;
+
+typedef struct {
+    bool active;
+    JobInternalActionType_t type;
+    uint32_t started_at_ms;
+    uint32_t duration_ms;
+} JobInternalAction_t;
+
+typedef struct {
+    uint32_t job_id;
+    JobStatus_t status;
+    RecipeID_t initial_recipe_id;
+    const ProcessStep_t* current_recipe;
+    uint8_t current_step_index;
+    uint8_t pending_actions_count;
+    uint32_t step_start_time_ms;
+    uint32_t step_timeout_ms;
+    ExecutorTransaction_t transactions[JOB_MAX_EXECUTOR_TRANSACTIONS];
+    UniversalCommand_t initial_cmd;
+    JobInternalAction_t internal_actions[JOB_MAX_INTERNAL_ACTIONS];
+} JobContext_t;
 
 // --- Внутренние переменные ---
 static JobContext_t g_active_jobs[MAX_CONCURRENT_JOBS];
 static uint32_t g_next_job_id = 1;
 
 // --- Прототипы внутренних функций ---
-static JobContext_t* JobManager_FindJob(uint32_t job_id);
 static JobContext_t* JobManager_FindFreeSlot(void);
 static void JobManager_ExecuteStep(JobContext_t* job);
 static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status);
@@ -60,6 +134,11 @@ static bool JobManager_StageCanTx(
 		uint8_t* staged_count,
 		const CAN_Message_t* msg,
 		const char* action_label);
+static bool JobManager_BuildAndStageExecutorAction(
+        JobContext_t* job,
+        const AtomicAction_t* action,
+        CAN_Message_t* staged_msgs,
+        uint8_t* staged_count);
 static JobContext_t* JobManager_FindJobForRoutedResponse(
 		const CanRoutedResponse_t* routed,
 		ExecutorTransaction_t** out_tx,
@@ -78,17 +157,7 @@ static JobInternalAction_t* JobManager_RegisterInternalAction(
         JobInternalActionType_t type,
         uint32_t duration_ms);
 static bool JobManager_CheckInternalActions(JobContext_t* job);
-
-/*
- * Возвращает модуль signed steps как uint32_t.
- * Отдельная функция нужна из-за INT32_MIN: его нельзя безопасно
- * инвертировать простым выражением -steps.
- */
-static uint32_t JobManager_AbsSteps(int32_t steps)
-{
-	// INT32_MIN нельзя безопасно инвертировать простым "-steps".
-    return (steps < 0) ? ((uint32_t)(-(steps + 1)) + 1) : (uint32_t)steps;
-}
+static JobResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy);
 
 /*
  * Расширяет timeout текущего шага recipe до требуемого значения.
@@ -102,26 +171,128 @@ static void JobManager_ExtendStepTimeout(JobContext_t* job, uint32_t required_ti
 		}
 }
 
-/*
- * Считает operation timeout для low-level Motion ROTATE.
- * Дирижер ждет расчетное время движения плюс запас, а не только
- * фиксированный базовый timeout шага.
- */
-static uint32_t JobManager_CalcMotionRotateTimeoutMs(int32_t steps, uint16_t speed)
+static JobResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy)
 {
-	uint32_t abs_steps = JobManager_AbsSteps(steps);
+    switch (policy) {
+        case EXECUTOR_ACTION_RESPONSE_DATA_THEN_DONE:
+            return JOB_RESPONSE_DATA_THEN_DONE;
 
-	if (abs_steps == 0) {
-		return JOB_TIMEOUT_MS;
-	}
+        case EXECUTOR_ACTION_RESPONSE_MULTI_DATA_THEN_DONE:
+            return JOB_RESPONSE_MULTI_DATA_THEN_DONE;
 
-	// speed уже проверен вызывающим кодом: здесь считаем только физическое время.
-	uint64_t motion_ms = (((uint64_t)abs_steps * 1000) + speed - 1) / speed;
+        case EXECUTOR_ACTION_RESPONSE_DONE_ONLY:
+        default:
+            return JOB_RESPONSE_DONE_ONLY;
+    }
+}
 
-	if (motion_ms > (UINT32_MAX - JOB_MOTION_ROTATE_MARGIN_MS)) {
-		return UINT32_MAX;
-	}
-	return (uint32_t)motion_ms + JOB_MOTION_ROTATE_MARGIN_MS;
+static bool JobManager_BuildAndStageExecutorAction(
+        JobContext_t* job,
+        const AtomicAction_t* action,
+        CAN_Message_t* staged_msgs,
+        uint8_t* staged_count)
+{
+    RecipeExecutorActionContext_t action_ctx = {
+        .job_id = job->job_id,
+        .recipe_id = job->initial_recipe_id,
+        .initial_cmd = &job->initial_cmd,
+        .current_step_timeout_ms = job->step_timeout_ms
+    };
+    RecipeExecutorAction_t executor_action;
+    char info_msg[APP_USB_RESP_MAX_LEN];
+    info_msg[0] = '\0';
+
+    if (!RecipeExecutorActionBuilder_Build(
+            &action_ctx,
+            action,
+            &executor_action,
+            info_msg,
+            sizeof(info_msg))) {
+        if (info_msg[0] == '\0') {
+            snprintf(info_msg, sizeof(info_msg),
+                    "ERROR: Job #%lu: Cannot build executor action %d.",
+                    (unsigned long)job->job_id,
+                    (int)action->action);
+        }
+        Dispatcher_SendUsbResponse(info_msg);
+        JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+        return false;
+    }
+
+    if (!executor_action.command_required) {
+        if (job->pending_actions_count > 0U) {
+            job->pending_actions_count--;
+        }
+        return true;
+    }
+
+    JobManager_ExtendStepTimeout(job, executor_action.operation_timeout_ms);
+
+    if (JobManager_RegisterExecutorTransaction(
+            job,
+            executor_action.low_command_code,
+            executor_action.node_id,
+            executor_action.channel,
+            executor_action.channel_valid,
+            JobManager_ResponsePolicyFromExecutorAction(executor_action.response_policy),
+            executor_action.operation_timeout_ms) == NULL) {
+        snprintf(info_msg, sizeof(info_msg),
+                "ERROR: Job #%lu: Cannot register %s transaction (Node:0x%02X, Ch:%u)",
+                (unsigned long)job->job_id,
+                executor_action.action_label,
+                executor_action.node_id,
+                executor_action.channel);
+        Dispatcher_SendUsbResponse(info_msg);
+        JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+        return false;
+    }
+
+    switch (action->action) {
+        case ACTION_ROTATE_MOTOR:
+            snprintf(info_msg, sizeof(info_msg),
+                    "DEBUG: Job #%lu: Queued ROTATE_MOTOR (Phys:%u:%u, Steps:%ld, Speed:%u)",
+                    (unsigned long)job->job_id,
+                    executor_action.node_id,
+                    executor_action.channel,
+                    (long)executor_action.debug_signed_value,
+                    (unsigned int)executor_action.debug_value);
+            break;
+
+        case ACTION_HOME_MOTOR:
+            snprintf(info_msg, sizeof(info_msg),
+                    "DEBUG: Job #%lu: Queued HOME_MOTOR (Phys:%u:%u, Speed:%u)",
+                    (unsigned long)job->job_id,
+                    executor_action.node_id,
+                    executor_action.channel,
+                    (unsigned int)executor_action.debug_value);
+            break;
+
+        case ACTION_RUN_PUMP_DURATION:
+            snprintf(info_msg, sizeof(info_msg),
+                    "DEBUG: Job #%lu: Queued RUN_PUMP_DURATION (Phys:%u:%u, Duration:%lu)",
+                    (unsigned long)job->job_id,
+                    executor_action.node_id,
+                    executor_action.channel,
+                    (unsigned long)executor_action.debug_value);
+            break;
+
+        default:
+            snprintf(info_msg, sizeof(info_msg),
+                    "DEBUG: Job #%lu: Queued %s (Phys:%u:%u)",
+                    (unsigned long)job->job_id,
+                    executor_action.action_label,
+                    executor_action.node_id,
+                    executor_action.channel);
+            break;
+    }
+    Dispatcher_SendUsbResponse(info_msg);
+
+    return JobManager_StageCanTx(
+            job,
+            staged_msgs,
+            staged_count,
+            &executor_action.can_msg,
+            executor_action.action_label);
 }
 
 /*
@@ -845,7 +1016,6 @@ void JobManager_Init(void)
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 		g_active_jobs[i].status = JOB_STATUS_IDLE;
         g_active_jobs[i].job_id = 0;
-        g_active_jobs[i].kind = JOB_KIND_HOST_RECIPE;
         JobManager_ResetTransactions(&g_active_jobs[i]);
         }
 	g_next_job_id = 1;
@@ -858,16 +1028,6 @@ void JobManager_Init(void)
  */
 uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 {
-	if (parsed_cmd->command_code == 0x1002) { // Если это INIT
-		uint8_t mask = (parsed_cmd->args_type == ARGS_TYPE_PARSED) ? parsed_cmd->args.init.modules_mask : 0xFF;
-		if (!ServiceManager_CheckInventory(mask)) {
-			Dispatcher_SendError(parsed_cmd->command_code, 0x0005);
-			Dispatcher_SendUsbResponse("ERROR: Required CAN nodes for this module are OFFLINE.");
-			return 0; // Блокируем запуск задания
-			}
-	}
-
-
 	JobContext_t* job = JobManager_FindFreeSlot();
 
     if (job == NULL) {
@@ -882,7 +1042,6 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 
     job->job_id = new_job_id;
     job->status = JOB_STATUS_RUNNING;
-    job->kind = JOB_KIND_HOST_RECIPE;
     JobManager_ResetTransactions(job);
     job->initial_recipe_id = parsed_cmd->recipe_id;
     job->current_recipe = Recipe_Get(parsed_cmd->recipe_id);
@@ -904,48 +1063,9 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     Dispatcher_SendUsbResponse(ack_msg);
 
     JobManager_ExecuteStep(job);
-    
+
     // Возвращаем сохраненный ID, так как job->job_id может быть уже равен 0
     return new_job_id;
-}
-
-/*
- * Завершает один ожидаемый action внутри текущего recipe step.
- * Сейчас это legacy-точка продвижения pending_actions_count; в целевой схеме
- * она должна вызываться только после строгой проверки ExecutorTransaction.
- */
-bool JobManager_ProcessExecutorResponse(uint32_t job_id, uint8_t executor_id, bool action_status_ok)
-{
-	JobContext_t* job = JobManager_FindJob(job_id);
-    if (job == NULL || job->status != JOB_STATUS_RUNNING) {
-             char err_msg[APP_USB_RESP_MAX_LEN];
-             snprintf(err_msg, sizeof(err_msg), "WARNING: Response for unknown/inactive Job #%lu from Exec %u.", (unsigned long)job_id, executor_id);
-             Dispatcher_SendUsbResponse(err_msg);
-             return false;
-    }
-
-     if (!action_status_ok) {
-             char err_msg[APP_USB_RESP_MAX_LEN];
-             snprintf(err_msg, sizeof(err_msg), "ERROR: Job #%lu: Exec %u reported error for step %u.", (unsigned long)job->job_id, executor_id, job->current_step_index);
-             Dispatcher_SendUsbResponse(err_msg);
-             JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-             return true;
-     }
-
-      if (job->pending_actions_count > 0) {
-          job->pending_actions_count--;
-      } else {
-        	char warn_msg[APP_USB_RESP_MAX_LEN];
-            snprintf(warn_msg, sizeof(warn_msg), "WARNING: Job #%lu: Duplicate/unexpected response for step %u from Exec %u.", (unsigned long)job->job_id, job->current_step_index, executor_id);
-            Dispatcher_SendUsbResponse(warn_msg);
-            return false;
-      }
-
-      if (job->pending_actions_count == 0) {
-          job->current_step_index++;
-          JobManager_ExecuteStep(job);
-      }
-      return true;
 }
 
 // --- Helper functions for dynamic parameter retrieval ---
@@ -999,134 +1119,6 @@ static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t s
 					}
 		}
 	return static_value; // Return static value if not parsed or source is static
-}
-
-/*
- * Возвращает uint16_t-параметр atomic action.
- * Используется там, где recipe хранит default, но конкретная Host-команда
- * может переопределить значение через ParamSource_t.
- */
-static uint16_t JobManager_GetUint16Param(const JobContext_t* job, ParamSource_t source, uint16_t static_value)
-{
-	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-		switch (source) {
-
-			case PARAM_SOURCE_DISPENSER_CYCLES:
-				return job->initial_cmd.args.dispenser_wash.cycles;
-
-			default:
-				break;
-				}
-		}
-	return static_value;
-}
-
-/*
- * Возвращает int32_t-параметр atomic action.
- * Здесь сосредоточены технологические пересчеты Host-полей в шаги
- * для Motion-исполнителя.
- */
-static int32_t JobManager_GetInt32Param(const JobContext_t* job, ParamSource_t source, int32_t static_value)
-{
-	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-		switch (source) {
-		// Add int32_t sources here as needed
-		case PARAM_SOURCE_REACTION_DISK_ROTATE_STEPS:
-			switch (job->initial_recipe_id) {
-				case RECIPE_WASH_STATION_WASH:
-					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_wash.cuvette);
-				case RECIPE_WASH_STATION_FILL:
-					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.wash_station_fill.cuvette);
-				case RECIPE_PHOTOMETER_SCAN_SINGLE:
-					return ParamTranslator_CuvetteToSteps(job->initial_cmd.args.photometer_scan_single.cuvette);
-				default:
-					break;
-				}
-			break;
-
-		case PARAM_SOURCE_REAGENT_SAMPLE_ROTATE_STEPS:
-			switch (job->initial_recipe_id) {
-				case RECIPE_SAMPLE_ROTATE:
-					return ParamTranslator_SampleDiskSlotToSteps(job->initial_cmd.args.sample_rotate.slot);
-				case RECIPE_REAGENT_ROTATE:
-					return ParamTranslator_ReagentRotorSlotToSteps(
-							job->initial_cmd.args.reagent_rotate.rotor_id,
-							job->initial_cmd.args.reagent_rotate.slot);
-				default:
-					break;
-				}
-			break;
-
-		case PARAM_SOURCE_DISPENSER_ROTATE_STEPS:
-			switch (job->initial_recipe_id) {
-				case RECIPE_DISPENSER_WASH:
-					return job->initial_cmd.args.dispenser_wash.rotate_steps;
-				case RECIPE_DISPENSER_ASPIRATE:
-					return job->initial_cmd.args.dispenser_aspirate.rotate_steps;
-				case RECIPE_DISPENSER_DISPENSE:
-					return job->initial_cmd.args.dispenser_dispense.rotate_steps;
-				default:
-					break;
-				}
-			break;
-
-		case PARAM_SOURCE_DISPENSER_Z_STEPS_DOWN:
-			switch (job->initial_recipe_id) {
-				case RECIPE_DISPENSER_WASH:
-					return job->initial_cmd.args.dispenser_wash.steps_down;
-				case RECIPE_DISPENSER_ASPIRATE:
-					return job->initial_cmd.args.dispenser_aspirate.steps_down;
-				case RECIPE_DISPENSER_DISPENSE:
-					return job->initial_cmd.args.dispenser_dispense.steps_down;
-				default:
-					break;
-				}
-			break;
-
-		case PARAM_SOURCE_DISPENSER_Z_STEPS_UP:
-			switch (job->initial_recipe_id) {
-				case RECIPE_DISPENSER_WASH:
-					return job->initial_cmd.args.dispenser_wash.steps_up;
-				case RECIPE_DISPENSER_ASPIRATE:
-					return job->initial_cmd.args.dispenser_aspirate.steps_up;
-				case RECIPE_DISPENSER_DISPENSE:
-					return job->initial_cmd.args.dispenser_dispense.steps_up;
-				default:
-					break;
-				}
-			break;
-
-		case PARAM_SOURCE_MIXER_XY_STEPS:
-			return ParamTranslator_MixerCuvetteToXYSteps(job->initial_cmd.args.mixer_mix.cuvette);
-
-		case PARAM_SOURCE_MIXER_Z_STEPS_DOWN:
-			return ParamTranslator_MixerZToStepsDown(
-					job->initial_cmd.args.mixer_mix.mixer_id,
-					job->initial_cmd.args.mixer_mix.cuvette);
-
-		case PARAM_SOURCE_MIXER_Z_STEPS_UP:
-			return ParamTranslator_MixerZToStepsUp(
-					job->initial_cmd.args.mixer_mix.mixer_id,
-					job->initial_cmd.args.mixer_mix.cuvette);
-
-		case PARAM_SOURCE_DISPENSER_SYRINGE_STEPS:
-			switch (job->initial_recipe_id) {
-				case RECIPE_DISPENSER_WASH:
-					return job->initial_cmd.args.dispenser_wash.syringe_steps;
-				case RECIPE_DISPENSER_ASPIRATE:
-					return job->initial_cmd.args.dispenser_aspirate.syringe_steps;
-				case RECIPE_DISPENSER_DISPENSE:
-					return job->initial_cmd.args.dispenser_dispense.syringe_steps;
-				default:
-					break;
-				}
-			break;
-
-		default:
-			break;
-			}
-		}
-	return static_value;
 }
 
 /*
@@ -1246,20 +1238,6 @@ void JobManager_Run(void)
 // --- Внутренние функции ---
 
 /*
- * Ищет активный job по его runtime job_id.
- * Возвращает NULL, если job уже завершен, свободен или id не найден.
- */
-static JobContext_t* JobManager_FindJob(uint32_t job_id)
-{
-	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
-		if (g_active_jobs[i].status != JOB_STATUS_IDLE && g_active_jobs[i].job_id == job_id) {
-			return &g_active_jobs[i];
-        }
-    }
-	return NULL;
-}
-
-/*
  * Ищет свободный слот для нового Host job.
  * Сейчас MAX_CONCURRENT_JOBS равен 1; функция оставлена как основа
  * для будущего расширения параллельных Host operations.
@@ -1313,372 +1291,18 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 
     for (int i = 0; i < current_step->num_actions; i++) {
         const AtomicAction_t* action = &current_step->atomic_actions[i];
-        CAN_Message_t can_msg;
-        DevicePhysAddr_t phys_addr;
 
         switch (action->action) {
-            case ACTION_ROTATE_MOTOR: {
-                uint8_t sys_id = JobManager_GetUint8Param(
-                        job,
-                        action->params.rotate_motor.motor_id_source,
-                        action->params.rotate_motor.motor_id);
-                int32_t steps = JobManager_GetInt32Param(
-                        job,
-                        action->params.rotate_motor.steps_source,
-                        action->params.rotate_motor.steps);
-                uint16_t speed = JobManager_GetUint16Param(
-                        job,
-                        action->params.rotate_motor.speed_source,
-                        action->params.rotate_motor.speed);
-
-                uint32_t abs_steps = JobManager_AbsSteps(steps);
-                if (abs_steps != 0U && speed == 0U) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Motion speed 0 for SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                JobManager_ExtendStepTimeout(
-                        job,
-                        JobManager_CalcMotionRotateTimeoutMs(steps, speed));
-
-                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Motor SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                if (JobManager_RegisterExecutorTransaction(
-                        job,
-                        CAN_CMD_MOTOR_ROTATE,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        true,
-                        JOB_RESPONSE_DONE_ONLY,
-                        job->step_timeout_ms) == NULL) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Cannot register ROTATE_MOTOR transaction (Node:0x%02X, Ch:%u)",
-                            (unsigned long)job->job_id,
-                            phys_addr.node_id,
-                            phys_addr.ch_idx);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "DEBUG: Job #%lu: Queued ROTATE_MOTOR (Phys:%u:%u, Steps:%ld, Speed:%u)",
-                        (unsigned long)job->job_id,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        (long)steps,
-                        speed);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                Packer_CreateRotateMotorMsg(phys_addr.ch_idx, steps, speed, &can_msg);
-                can_msg.id = CAN_BUILD_ID(
-                        CAN_PRIORITY_HIGH,
-                        CAN_MSG_TYPE_COMMAND,
-                        phys_addr.node_id,
-                        CAN_ADDR_CONDUCTOR);
-                if (!JobManager_StageCanTx(
-                        job,
-                        staged_can_msgs,
-                        &staged_can_msg_count,
-                        &can_msg,
-                        "ROTATE_MOTOR")) {
-                    return;
-                }
-                break;
-            }
-
-            case ACTION_HOME_MOTOR: {
-                uint8_t sys_id = JobManager_GetUint8Param(
-                        job,
-                        action->params.home_motor.motor_id_source,
-                        action->params.home_motor.motor_id);
-                uint16_t speed = JobManager_GetUint16Param(
-                        job,
-                        action->params.home_motor.speed_source,
-                        action->params.home_motor.speed);
-
-                // Фильтрация по маске для инициализации.
-                if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM &&
-                        job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-                    uint8_t modules_mask = job->initial_cmd.args.init.modules_mask;
-                    if ((modules_mask & (1U << (sys_id - 1U))) == 0U) {
-                        job->pending_actions_count--;
-                        continue;
-                    }
-                }
-
-                if (speed == 0U) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid HOME speed 0 for SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                JobManager_ExtendStepTimeout(job, JOB_MOTION_HOME_TIMEOUT_MS);
-
-                phys_addr = DeviceMapping_GetMotorPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Motor SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                if (JobManager_RegisterExecutorTransaction(
-                        job,
-                        CAN_CMD_MOTOR_HOME,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        true,
-                        JOB_RESPONSE_DONE_ONLY,
-                        job->step_timeout_ms) == NULL) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Cannot register HOME_MOTOR transaction (Node:0x%02X, Ch:%u)",
-                            (unsigned long)job->job_id,
-                            phys_addr.node_id,
-                            phys_addr.ch_idx);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "DEBUG: Job #%lu: Queued HOME_MOTOR (Phys:%u:%u, Speed:%u)",
-                        (unsigned long)job->job_id,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        speed);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                Packer_CreateHomeMotorMsg(phys_addr.ch_idx, speed, &can_msg);
-                can_msg.id = CAN_BUILD_ID(
-                        CAN_PRIORITY_HIGH,
-                        CAN_MSG_TYPE_COMMAND,
-                        phys_addr.node_id,
-                        CAN_ADDR_CONDUCTOR);
-                if (!JobManager_StageCanTx(
-                        job,
-                        staged_can_msgs,
-                        &staged_can_msg_count,
-                        &can_msg,
-                        "HOME_MOTOR")) {
-                    return;
-                }
-                break;
-            }
-
-            case ACTION_RUN_PUMP_DURATION: {
-                uint8_t sys_id = JobManager_GetUint8Param(
-                        job,
-                        action->params.pump_duration.pump_id_source,
-                        action->params.pump_duration.pump_id);
-                uint32_t duration_ms = JobManager_GetUint32Param(
-                        job,
-                        action->params.pump_duration.duration_ms_source,
-                        action->params.pump_duration.duration_ms);
-
-                if (duration_ms == 0U) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid pump duration for SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                // Finite Fluidics: ждем физическую длительность операции плюс запас.
-                JobManager_ExtendStepTimeout(
-                        job,
-                        duration_ms + JOB_PUMP_DURATION_MARGIN_MS);
-
-                phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Pump SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                if (JobManager_RegisterExecutorTransaction(
-                        job,
-                        CAN_CMD_PUMP_RUN_DURATION,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        true,
-                        JOB_RESPONSE_DONE_ONLY,
-                        job->step_timeout_ms) == NULL) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Cannot register RUN_PUMP_DURATION transaction (Node:0x%02X, Ch:%u)",
-                            (unsigned long)job->job_id,
-                            phys_addr.node_id,
-                            phys_addr.ch_idx);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "DEBUG: Job #%lu: Queued RUN_PUMP_DURATION (Phys:%u:%u, Duration:%lu)",
-                        (unsigned long)job->job_id,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        (unsigned long)duration_ms);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                Packer_CreatePumpRunDurationMsg(phys_addr.ch_idx, duration_ms, &can_msg);
-                can_msg.id = CAN_BUILD_ID(
-                        CAN_PRIORITY_HIGH,
-                        CAN_MSG_TYPE_COMMAND,
-                        phys_addr.node_id,
-                        CAN_ADDR_CONDUCTOR);
-                if (!JobManager_StageCanTx(
-                        job,
-                        staged_can_msgs,
-                        &staged_can_msg_count,
-                        &can_msg,
-                        "RUN_PUMP_DURATION")) {
-                    return;
-                }
-                break;
-            }
-
-            case ACTION_START_PUMP: {
-                uint8_t sys_id = JobManager_GetUint8Param(
-                        job,
-                        action->params.pump.pump_id_source,
-                        action->params.pump.pump_id);
-
-                phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Pump SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                if (JobManager_RegisterExecutorTransaction(
-                        job,
-                        CAN_CMD_PUMP_START,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        true,
-                        JOB_RESPONSE_DONE_ONLY,
-                        job->step_timeout_ms) == NULL) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Cannot register START_PUMP transaction (Node:0x%02X, Ch:%u)",
-                            (unsigned long)job->job_id,
-                            phys_addr.node_id,
-                            phys_addr.ch_idx);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "DEBUG: Job #%lu: Queued START_PUMP (Phys:%u:%u)",
-                        (unsigned long)job->job_id,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                Packer_CreatePumpStartMsg(phys_addr.ch_idx, 0, &can_msg);
-                can_msg.id = CAN_BUILD_ID(
-                        CAN_PRIORITY_HIGH,
-                        CAN_MSG_TYPE_COMMAND,
-                        phys_addr.node_id,
-                        CAN_ADDR_CONDUCTOR);
-                if (!JobManager_StageCanTx(
-                        job,
-                        staged_can_msgs,
-                        &staged_can_msg_count,
-                        &can_msg,
-                        "START_PUMP")) {
-                    return;
-                }
-                break;
-            }
-
+            case ACTION_ROTATE_MOTOR:
+            case ACTION_HOME_MOTOR:
+            case ACTION_RUN_PUMP_DURATION:
+            case ACTION_START_PUMP:
             case ACTION_STOP_PUMP: {
-                uint8_t sys_id = JobManager_GetUint8Param(
+                if (!JobManager_BuildAndStageExecutorAction(
                         job,
-                        action->params.pump.pump_id_source,
-                        action->params.pump.pump_id);
-
-                phys_addr = DeviceMapping_GetFluidicPhysAddr(sys_id);
-                if (!phys_addr.is_valid) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Invalid Pump SysID %u",
-                            (unsigned long)job->job_id,
-                            sys_id);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                if (JobManager_RegisterExecutorTransaction(
-                        job,
-                        CAN_CMD_PUMP_STOP,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx,
-                        true,
-                        JOB_RESPONSE_DONE_ONLY,
-                        job->step_timeout_ms) == NULL) {
-                    snprintf(info_msg, sizeof(info_msg),
-                            "ERROR: Job #%lu: Cannot register STOP_PUMP transaction (Node:0x%02X, Ch:%u)",
-                            (unsigned long)job->job_id,
-                            phys_addr.node_id,
-                            phys_addr.ch_idx);
-                    Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-                    return;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "DEBUG: Job #%lu: Queued STOP_PUMP (Phys:%u:%u)",
-                        (unsigned long)job->job_id,
-                        phys_addr.node_id,
-                        phys_addr.ch_idx);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                Packer_CreatePumpStopMsg(phys_addr.ch_idx, &can_msg);
-                can_msg.id = CAN_BUILD_ID(
-                        CAN_PRIORITY_HIGH,
-                        CAN_MSG_TYPE_COMMAND,
-                        phys_addr.node_id,
-                        CAN_ADDR_CONDUCTOR);
-                if (!JobManager_StageCanTx(
-                        job,
+                        action,
                         staged_can_msgs,
-                        &staged_can_msg_count,
-                        &can_msg,
-                        "STOP_PUMP")) {
+                        &staged_can_msg_count)) {
                     return;
                 }
                 break;
@@ -1803,7 +1427,6 @@ static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status)
 
     job->status = JOB_STATUS_IDLE;
     JobManager_ResetTransactions(job);
-    job->kind = JOB_KIND_HOST_RECIPE;
 
     job->job_id = 0;
 }

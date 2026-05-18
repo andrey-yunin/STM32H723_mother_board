@@ -13,6 +13,7 @@
 #include "app_init_checker.h"
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/dispatcher_io.h"
+#include "Dispatcher/host_recipe_operation.h"
 #include "Dispatcher/job_manager.h"
 #include "task_watchdog.h"
 #include "Dispatcher/can_response_router.h"
@@ -65,10 +66,11 @@ void app_start_task_dispatcher(void *argument)
 
 			// Создаем универсальную команду для инициализации
 			UniversalCommand_t init_cmd;
+			init_cmd.command_code = 0x1002;
 			init_cmd.recipe_id = RECIPE_INITIALIZE_SYSTEM;
 			init_cmd.args_type = ARGS_TYPE_NONE; // Инициализация не требует аргументов
 
-			uint32_t init_job_id = JobManager_StartNewJob(&init_cmd);
+			uint32_t init_job_id = HostRecipeOperation_Start(&init_cmd);
 
 			if (init_job_id == 0) {
 				Dispatcher_SendUsbResponse("CRITICAL ERROR: Failed to start system initialization job!");
@@ -180,7 +182,6 @@ SystemState_t GetSystemState(void)
 {
 	return g_system_state;
 }
-
 
 
 

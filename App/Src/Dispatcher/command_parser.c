@@ -1,179 +1,14 @@
-
 #include "command_parser.h"
 #include "dispatcher_io.h"
-#include "job_manager.h"
+#include "host_recipe_operation.h"
 #include "parameter_parser.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include "cmsis_os.h" // Required for osDelay
-#include "direct_command_handlers.h"
+#include "host_direct_command_registry.h"
+#include "host_recipe_command_registry.h"
 
-// Таблица дескрипторов для команд-рецептов
-
-        //INIT descriptor:
-const RecipeCommandDescriptor_t recipe_command_table[] = {
-
-
-		// --- Системные ---
-
-		{.command_code = 0x1002, // Код команды INIT
-				.min_params_len = 1,
-				.max_params_len = 1,
-				.recipe_id = RECIPE_INITIALIZE_SYSTEM // ID рецепта INIT
-		 },
-
-
-		 // --- Дозатор (0x20xx) ---
-
-		 //DISPENSER_WASH descriptor:
-		 {.command_code = 0x2000, // Код команды DISPENSER_WASH
-				 .min_params_len = 4,   // dispenser_id (1) + volume (2) + cycles (1) = 4 байта
-				 .max_params_len = 4,   //
-				 .recipe_id = RECIPE_DISPENSER_WASH // ID рецепта DISPENSER_WASH
-		 },
-
-		 // DISPENSER_ASPIRATE descriptor: added 11/02/2026
-		 {.command_code = 0x2100, // Код команды DISPENSER_ASPIRATE
-				 .min_params_len = 6,   // dispenser_id (1) + source (1) + position (2) + volume (2) = 6 байт
-		 		 .max_params_len = 6,
-				 .recipe_id = RECIPE_DISPENSER_ASPIRATE
-				 },
-
-		 // DISPENSER_DISPENSE descriptor: <-- added 13/02/2026
-		 {.command_code = 0x2200, // Код команды DISPENSER_DISPENSE
-				 .min_params_len = 6,   // dispenser_id (1) + target (1) + slot (2) + volume (2) = 6 байт
-				 .max_params_len = 6,
-				 .recipe_id = RECIPE_DISPENSER_DISPENSE
-				 },
-
-
-		 // --- Миксер (0x30xx) ---
-
-		 // MIXER_MIX descriptor: <-- added 13/02/2026
-		 {.command_code = 0x3100, // Код команды MIXER_MIX
-				 .min_params_len = 6,   // mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 байт
-				 .max_params_len = 6,
-				 .recipe_id = RECIPE_MIXER_MIX
-				 },
-
-
-		// --- Моющая станция (0x40xx) ---
-
-		 // WASH_STATION_WASH descriptor: added 05/02/2026
-		 {.command_code = 0x4000, // Код команды WASH_STATION_WASH
-				 .min_params_len = 3,   // cycles (1) + cuvette (2) = 3 байта
-				 .max_params_len = 3,
-				 .recipe_id = RECIPE_WASH_STATION_WASH
-				 },
-
-		 // WASH_STATION_FILL descriptor: <-- added 17/02/2026
-		 {.command_code = 0x4100, // Код команды WASH_STATION_FILL
-				 .min_params_len = 4,   // volume (2) + cuvette (2) = 4 байта
-				 .max_params_len = 4,
-				 .recipe_id = RECIPE_WASH_STATION_FILL
-				 },
-
-
-		// --- Роторы и Диски (0x50xx) ---
-
-		// REAGENT_ROTATE descriptor: <-- added 13/02/2026
-		{.command_code = 0x5000, // Код команды REAGENT_ROTATE
-				.min_params_len = 3,   // rotor_id (1) + slot (2) = 3 байта
-				.max_params_len = 3,
-				.recipe_id = RECIPE_REAGENT_ROTATE
-				},
-
-		{.command_code = 0x5110,
-				.min_params_len = 2,
-				.max_params_len = 2,
-				.recipe_id = RECIPE_SAMPLE_ROTATE },
-
-
-		// --- Фотометр (0x60xx) ---
-
-		// PHOTOMETER_SCAN_SINGLE descriptor: <-- added 13/02/2026
-		{.command_code = 0x6100, // Код команды PHOTOMETER_SCAN_SINGLE
-			.min_params_len = 3,   // cuvette (2) + wavelength_mask (1) = 3 байта
-			.max_params_len = 3,
-			.recipe_id = RECIPE_PHOTOMETER_SCAN_SINGLE
-			},
-
-		 // Здесь будут добавляться другие команды-рецепты
-
-	};
-
-// Определяем количество команд в таблице
-const uint16_t RECIPE_COMMAND_TABLE_SIZE = sizeof(recipe_command_table) / sizeof(RecipeCommandDescriptor_t);
-
-
-/*
- *
- * * direct_command_table[]: Это статический массив типа DirectCommandDescriptor_t. В нем мы объявляем нашу первую прямую команду
-     GET_STATUS.
-       * command_code = 0x1000: Указываем код команды GET_STATUS.
-       * min_params_len = 0, max_params_len = 0: Указываем, что GET_STATUS не ожидает параметров.
-       * handler = handle_get_status: Связываем эту команду с функцией-обработчиком, которую мы реализовали в direct_command_handlers.c.
- *
- */
-
-// Таблица дескрипторов для прямых команд
-const DirectCommandDescriptor_t direct_command_table[] = {
-		{.command_code = 0x1000, // Код команды GET_STATUS
-				.min_params_len = 0,
-				.max_params_len = 0,
-				.handler = handle_get_status // Указатель на наш обработчик
-				},
-
-	   // Здесь будут добавляться другие прямые команды
-
-    	// 0x1003 - Запрос версии прошивки
-		{
-				.command_code = 0x1003,
-				.min_params_len = 0,
-				.max_params_len = 0,
-				.handler = handle_get_version
-				},
-
-		// 0x1010 - Аварийная остановка всех механизмов (Мгновенное действие)
-		{.command_code = 0x1010,
-				.min_params_len = 0,
-				.max_params_len = 0,
-				.handler = handle_emergency_stop
-				},
-
-		// 0x1005 - Команда для работы с временем (согласно commands.md)
-		{ .command_code = 0x1005,
-				.min_params_len = 0,
-				.max_params_len = 0,
-				.handler = handle_get_datetime
-				},
-
-
-		// 0x8000 - Запрос текущей температуры термостата (Прямой опрос без рецепта)
-		{.command_code = 0x8000,
-				.min_params_len = 1,
-				.max_params_len = 1,
-				.handler = handle_thermo_get_temp
-				},
-
-		// 0x9010 - SENSOR_GET_ALL_TEMPS
-		{.command_code = 0x9010,
-				.min_params_len = 0,
-				.max_params_len = 0,
-				.handler = handle_sensor_get_all_temps
-				},
-
-		// 0x9011 - SENSOR_GET_TEMP
-		{.command_code = 0x9011,
-				.min_params_len = 1,
-				.max_params_len = 1,
-				.handler = handle_sensor_get_temp
-				},
-		};
-
-// Определяем количество команд в таблице
-const uint16_t DIRECT_COMMAND_TABLE_SIZE = sizeof(direct_command_table) / sizeof(DirectCommandDescriptor_t);
 
 // === Локальные типы и прототипы ===
 
@@ -258,7 +93,7 @@ static CommandStatus_t process_string_args_aspirate(const char *args, UniversalC
     cmd->args_type = ARGS_TYPE_STRING;
     strncpy(cmd->args.string, args, APP_USB_CMD_MAX_LEN - 1);
     cmd->args.string[APP_USB_CMD_MAX_LEN - 1] = '\0';
-    if (JobManager_StartNewJob(cmd) == 0) return CMD_ERROR;
+    if (HostRecipeOperation_Start(cmd) == 0) return CMD_ERROR;
     return CMD_OK;
 }
 
@@ -313,90 +148,48 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     }
 
 
-    /*
-     *
-     * цикл for итерирует по direct_command_table.
-   * При совпадении command_code выполняется проверка params_len на соответствие min_params_len и max_params_len. В случае несовпадения
-     отправляется NACK и функция завершается.
-   * Если проверка пройдена, вызывается соответствующий обработчик из direct_command_table[i].handler, и функция
-     Parser_ProcessBinaryCommand завершается.
-   * Если команда не найдена в direct_command_table, поиск продолжается в recipe_command_table.
-     *
-     */
+    const HostDirectCommandDescriptor_t* direct_cmd =
+            HostDirectCommandRegistry_Find(command_code);
 
+    if (direct_cmd != NULL) {
+        if (params_len < direct_cmd->min_params_len ||
+                params_len > direct_cmd->max_params_len) {
+            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            return;
+        }
 
-    // Ищем команду в таблице прямых команд
-    for (uint16_t i = 0; i < DIRECT_COMMAND_TABLE_SIZE; i++) {
-    	if (direct_command_table[i].command_code == command_code) {
-    		// Команда найдена в таблице прямых команд
-    		// Проверка длины параметров
-    		if (params_len < direct_command_table[i].min_params_len ||
-    			params_len > direct_command_table[i].max_params_len) {
-    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
-    			return;
-    			}
+        Dispatcher_SendAck(command_code);
+        osDelay(1); // CPU, чтобы позволить USB отправить ACK до старта обработки.
 
-    		//Отправляем ACK
-    		Dispatcher_SendAck(command_code);
-    		osDelay(1); //CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
+        direct_cmd->handler(command_code, &packet[7], params_len);
+        return;
+    }
 
-    		// Вызываем обработчик прямой команды
-    		direct_command_table[i].handler(command_code, &packet[7], params_len);
-    		return; // Команда обработана, выходим из функции
-    		}
-    	}
+    const HostRecipeCommandDescriptor_t* recipe_cmd =
+            HostRecipeCommandRegistry_Find(command_code);
 
+    if (recipe_cmd != NULL) {
+        cmd.command_code = command_code;
+        cmd.recipe_id = recipe_cmd->recipe_id;
 
-    // Если команда не найдена в таблице прямых команд, продолжаем поиск в таблице рецептов
+        if (params_len < recipe_cmd->min_params_len ||
+                params_len > recipe_cmd->max_params_len) {
+            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            return;
+        }
 
+        Dispatcher_SendAck(command_code);
+        osDelay(1); // Уступаем CPU, чтобы USB отправил ACK до старта Job'а.
 
-    /*
-     *   * Мы добавляем цикл for, который итерирует по нашей новой таблице recipe_command_table.
-   * Для каждой записи мы сравниваем command_code из входящего пакета с command_code в дескрипторе.
-   * Если команда найдена:
-       * Мы присваиваем cmd.recipe_id из дескриптора.
-       * Выполняем проверку длины параметров, используя min_params_len и max_params_len из дескриптора. Если длина некорректна,
-         отправляем NACK и выходим.
-       * Запускаем JobManager_StartNewJob(&cmd).
-       * После успешного запуска или обработки ошибки, мы выходим из Parser_ProcessBinaryCommand, так как команда обработана.
-   * Если цикл завершился, и команда не была найдена в recipe_command_table, выполнение продолжится после этого блока, где пока еще
-     находится старый switch.
-     *
-     */
+        bool parse_success = Parameters_Parse(&cmd, &packet[7], params_len);
+        if (!parse_success) {
+            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            return;
+        }
 
-    // Search for the command in the recipe command table
-    for (uint16_t i = 0; i < RECIPE_COMMAND_TABLE_SIZE; i++) {
-    	if (recipe_command_table[i].command_code == command_code) {
-    		// Command found in recipe table
-    		cmd.command_code = command_code;  // <-- Добавлено поле command_code 22.01.2026
-    		cmd.recipe_id = recipe_command_table[i].recipe_id;
-
-    		// Parameter length validation
-    		if (params_len < recipe_command_table[i].min_params_len ||
-    			params_len > recipe_command_table[i].max_params_len) {
-    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
-    			return;
-    			}
-
-    		//Отправляем ACK
-    		Dispatcher_SendAck(command_code);
-    		osDelay(1); // Уступаем CPU, чтобы позволить обработчику USB отправить ACK до старта Job'а
-
-    		// added 03/02/2026
-    		// NEW: Call Parameters_Parse to process raw parameters into structured ones
-    		// Pass the raw parameters and their length to Parameters_Parse
-    		bool parse_success = Parameters_Parse(&cmd, &packet[7], params_len);
-    		if (!parse_success) {
-    			// If parsing fails, send NACK for invalid parameters
-    			Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
-    			return;
-    			}
-
-    		// Start JobManager to execute the recipe
-    		JobManager_StartNewJob(&cmd);
-    		return; // Command processed, exit function
-    		}
-     }
+        HostRecipeOperation_Start(&cmd);
+        return;
+    }
 
 
     // Если мы дошли до сюда, команда не была найдена ни в одной из таблиц.

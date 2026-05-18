@@ -10,7 +10,6 @@
 
 #include <stdint.h>
 #include <stdbool.h> // Для булевых типов, если потребуется
-#include "command_parser.h" // Для DirectCommandHandler_t, DirectCommandDescriptor_t
 
 
 
