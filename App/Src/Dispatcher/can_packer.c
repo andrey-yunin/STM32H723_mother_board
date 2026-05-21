@@ -174,7 +174,16 @@ void Packer_CreateGetInfoMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
 void Packer_CreateGetUidMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
 {
 	packer_init_header(out_msg, dst_addr);
-    packer_fill_payload(out_msg, 0xF004, 0, 0); // Код 0xF004 по стандарту
+    packer_fill_payload(out_msg, CAN_CMD_SRV_GET_UID, 0, 0);
+}
+
+/**
+ * @brief Запрос диагностических метрик устройства.
+ */
+void Packer_CreateGetStatusMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
+{
+	packer_init_header(out_msg, dst_addr);
+    packer_fill_payload(out_msg, CAN_CMD_SRV_GET_STATUS, 0, 0);
 }
 
 /**
@@ -214,6 +223,7 @@ void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg)
 bool Packer_ParseCanResponse(const CAN_Message_t* in_msg, CAN_Response_t* out_response)
 {
 	if (in_msg == NULL || out_response == NULL) return false;
+	if (!in_msg->is_extended || in_msg->dlc != CAN_PAYLOAD_SIZE) return false;
 
 	// Сброс структуры перед заполнением
 	memset(out_response, 0, sizeof(CAN_Response_t));

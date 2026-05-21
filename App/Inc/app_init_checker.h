@@ -11,11 +11,8 @@
 #include "main.h" // Для Error_Handler
 #include "shared_resources.h" // Для ручек очередей
 
-// Прототипы функций
 void app_init_checker_verifyqueues(void);
-void SetSystemReady(void);
-// TODO: Здесь можно добавить прототипы для проверки других ресурсов
-
+void app_init_checker_verifytasks(void);
 
 
 

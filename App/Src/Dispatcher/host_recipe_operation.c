@@ -23,7 +23,7 @@ static bool HostRecipeOperation_CheckPreflight(const UniversalCommand_t* parsed_
                 : 0xFFU;
 
         if (!ServiceManager_CheckInventory(mask)) {
-            Dispatcher_SendError(parsed_cmd->command_code, 0x0005);
+            Dispatcher_SendError(parsed_cmd->command_code, HOST_ERR_NOT_INIT);
             Dispatcher_SendUsbResponse("ERROR: Required CAN nodes for this module are OFFLINE.");
             return false;
         }

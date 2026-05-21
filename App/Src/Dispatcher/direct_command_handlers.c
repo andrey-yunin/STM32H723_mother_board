@@ -5,12 +5,9 @@
  *      Author: andrey
  */
 
-#include "device_mapping.h"
 #include "direct_command_handlers.h"
 #include "dispatcher_io.h"
-#include "app_init_checker.h" // For GetSystemState
 #include "task_dispatcher.h"
-#include "can_packer.h"
 
 #define CONDUCTOR_FW_VERSION_MAJOR      1U
 #define CONDUCTOR_FW_VERSION_MINOR      0U
@@ -24,8 +21,29 @@
 #define CONDUCTOR_PLACEHOLDER_MINUTE    0U
 #define CONDUCTOR_PLACEHOLDER_SECOND    0U
 
+#define HOST_ANALYZER_STATUS_OFF        0U
+#define HOST_ANALYZER_STATUS_READY      1U
+#define HOST_ANALYZER_STATUS_BUSY       2U
+#define HOST_ANALYZER_STATUS_ERROR      3U
 
+static uint8_t handle_get_status_host_state(SystemState_t state)
+{
+	switch (state) {
+		case SYS_STATE_READY:
+			return HOST_ANALYZER_STATUS_READY;
 
+		case SYS_STATE_INITIALIZING:
+		case SYS_STATE_BUSY:
+			return HOST_ANALYZER_STATUS_BUSY;
+
+		case SYS_STATE_ERROR:
+			return HOST_ANALYZER_STATUS_ERROR;
+
+		case SYS_STATE_POWER_ON:
+		default:
+			return HOST_ANALYZER_STATUS_OFF;
+	}
+}
 
 /**
  * @brief Handler for the direct command GET_STATUS (0x1000)
@@ -39,18 +57,19 @@ void handle_get_status(uint16_t command_code, const uint8_t* params, uint16_t pa
 	SystemState_t current_state = GetSystemState();
 	// Form the payload for the DATA response
 	// 1st byte: Current system state
-	// 2nd & 3rd bytes: Last error code (0 for now)
+	// 2nd & 3rd bytes: Last error code
 
+	uint16_t last_error = GetSystemErrorCode();
 	uint8_t data_payload[3];
-	data_payload[0] = (uint8_t)current_state;
-	data_payload[1] = 0x00; // ErrorCode MSB
-	data_payload[2] = 0x00; // ErrorCode LSB
+	data_payload[0] = handle_get_status_host_state(current_state);
+	data_payload[1] = (uint8_t)(last_error >> 8);
+	data_payload[2] = (uint8_t)(last_error & 0xFFU);
 
     // Send the DATA response
-	Dispatcher_SendData(command_code, 0x03, 0x0000, data_payload, sizeof(data_payload));
+	Dispatcher_SendData(command_code, HOST_RESPONSE_TYPE_DATA, HOST_STATUS_OK, data_payload, sizeof(data_payload));
 
 	// Complete the command with a DONE response
-	Dispatcher_SendDone(command_code, 0x0000);
+	Dispatcher_SendDone(command_code, HOST_STATUS_OK);
 
 }
 
@@ -91,8 +110,8 @@ void handle_get_version(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 		(uint8_t)build_date[9]
 	};
 
-	Dispatcher_SendData(cmd_code, 0x03, 0x0000, ver_data, sizeof(ver_data));
-	Dispatcher_SendDone(cmd_code, 0x0000);
+	Dispatcher_SendData(cmd_code, HOST_RESPONSE_TYPE_DATA, HOST_STATUS_OK, ver_data, sizeof(ver_data));
+	Dispatcher_SendDone(cmd_code, HOST_STATUS_OK);
 }
 
 /*
@@ -119,41 +138,27 @@ void handle_get_datetime(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 		(uint8_t)CONDUCTOR_PLACEHOLDER_SECOND
 	};
 
-	Dispatcher_SendData(cmd_code, 0x03, 0x0000, dt_data, sizeof(dt_data));
-	Dispatcher_SendDone(cmd_code, 0x0000);
+	Dispatcher_SendData(cmd_code, HOST_RESPONSE_TYPE_DATA, HOST_STATUS_OK, dt_data, sizeof(dt_data));
+	Dispatcher_SendDone(cmd_code, HOST_STATUS_OK);
 }
 
 
 void handle_emergency_stop(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
+	(void)params;
+	(void)len;
 
-	CAN_Message_t can_msg;
-
-	// Рассылаем команду STOP на широковещательный адрес 0x00
-	Packer_CreateStopMotorMsg(0, &can_msg); // ch_idx 0 (для broadcast игнорируется)
-	can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, CAN_ADDR_BROADCAST, CAN_ADDR_CONDUCTOR);
-	xQueueSend(can_tx_queue_handle, &can_msg, 0);
-	Dispatcher_SendDone(cmd_code, 0x0000);
+	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
+	Dispatcher_SendUsbResponse("ERROR: EMERGENCY_STOP requires safety operation path.");
 }
 
 void handle_thermo_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	uint8_t thermo_id = params[0];
+	(void)params;
+	(void)len;
 
-	DevicePhysAddr_t phys = DeviceMapping_GetThermoPhysAddr(thermo_id); // Используем маппинг
-
-	if (phys.is_valid) {
-		CAN_Message_t can_msg;
-		Packer_CreateGetTempMsg(phys.ch_idx, &can_msg);
-		can_msg.id = CAN_BUILD_ID(CAN_PRIORITY_HIGH, CAN_MSG_TYPE_COMMAND, phys.node_id, CAN_ADDR_CONDUCTOR);
-		xQueueSend(can_tx_queue_handle, &can_msg, 0);
-
-		// Ответ придет асинхронно через JobManager_Run (тип DATA)
-		}
-	else
-	{
-		Dispatcher_SendError(cmd_code, 0x0003); // Invalid Params
-		}
+	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
+	Dispatcher_SendUsbResponse("ERROR: THERMO_GET_TEMP is not connected to HOST_DIRECT yet.");
 }
 
 
@@ -162,7 +167,7 @@ void handle_sensor_get_all_temps(uint16_t cmd_code, const uint8_t* params, uint1
 	(void)params;
 	(void)len;
 
-	Dispatcher_SendError(cmd_code, 0x000A);
+	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
 	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_ALL_TEMPS is not connected to HOST_DIRECT yet.");
 }
 
@@ -171,6 +176,6 @@ void handle_sensor_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t l
 	(void)params;
 	(void)len;
 
-	Dispatcher_SendError(cmd_code, 0x000A);
+	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
 	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_TEMP is not connected to HOST_DIRECT yet.");
 }

@@ -109,15 +109,17 @@ typedef struct {
 #define CAN_CMD_VALVE_CLOSE             0x0205 // Закрыть клапан
 
 // --- Группа 3: Thermo/Sensors (0x90xx) ---
-#define CAN_CMD_THERMO_GET_TEMP         0x9011 // Запрос температуры датчика
 #define CAN_CMD_THERMO_GET_ALL          0x9010 // Запрос данных со всех датчиков платы
+#define CAN_CMD_THERMO_GET_TEMP         0x9011 // Запрос температуры датчика
 
 // --- Группа 4: Service & Maintenance (0xFxxx) ---
 #define CAN_CMD_SRV_GET_INFO            0xF001 // Запрос версии и типа платы
 #define CAN_CMD_SRV_REBOOT              0xF002 // Программная перезагрузка
 #define CAN_CMD_SRV_COMMIT              0xF003 // Сохранение RAM-настроек во Flash
+#define CAN_CMD_SRV_GET_UID             0xF004 // Запрос уникального ID чипа
 #define CAN_CMD_SRV_SET_NODE_ID         0xF005 // Изменение сетевого адреса (NodeID)
 #define CAN_CMD_SRV_FACTORY_RESET       0xF006 // Сброс к заводским установкам
+#define CAN_CMD_SRV_GET_STATUS          0xF007 // Запрос диагностических метрик
 #define CAN_CMD_SRV_SCAN_1WIRE          0xF101 // Запуск сканирования шины 1-Wire
 
 // --- Защитные ключи (Magic Keys) ---
@@ -131,12 +133,17 @@ typedef struct {
 // ============================================================================
 #define CAN_NACK_OK                     0x0000 // Нет ошибки
 #define CAN_NACK_ERR_UNKNOWN_CMD        0x0001 // Неизвестная команда
-#define CAN_NACK_ERR_INVALID_CH         0x0002 // Неверный индекс канала
-#define CAN_NACK_ERR_DEVICE_FAILURE     0x0003 // Аппаратный сбой (сенсор/мотор)
+#define CAN_NACK_ERR_INVALID_DEVICE_ID  0x0002 // Неверный device/channel id
+#define CAN_NACK_ERR_INVALID_CH         CAN_NACK_ERR_INVALID_DEVICE_ID
+#define CAN_NACK_ERR_DEVICE_BUSY        0x0003 // Устройство занято
 #define CAN_NACK_ERR_INVALID_KEY        0x0004 // Неверный Magic Key
 #define CAN_NACK_ERR_FLASH_WRITE        0x0005 // Ошибка записи во Flash
 #define CAN_NACK_ERR_INVALID_PARAM      0x0006 // Некорректный параметр/DLC
-#define CAN_NACK_ERR_BUSY               0x0007 // Устройство занято
+#define CAN_NACK_ERR_BUSY               CAN_NACK_ERR_DEVICE_BUSY
+
+// Domain-specific aliases. Numeric value is interpreted with source NodeID/command context.
+#define CAN_NACK_ERR_THERMO_SENSOR_FAILURE 0x0003
+#define CAN_NACK_ERR_THERMO_BUSY           0x0007
 
 
 
@@ -188,6 +195,7 @@ void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg);
 // --- Секция Service (Сервисные команды) ---
 void Packer_CreateGetInfoMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
 void Packer_CreateGetUidMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
+void Packer_CreateGetStatusMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
 void Packer_CreateSetNodeIdMsg(uint8_t dst_addr, uint8_t new_node_id, CAN_Message_t* out_msg);
 void Packer_CreateRebootMsg(uint8_t dst_addr, CAN_Message_t* out_msg);
 void Packer_CreateFactoryResetMsg(uint8_t dst_addr, CAN_Message_t* out_msg);

@@ -9,10 +9,7 @@
 #include "cmsis_os.h"
 #include "main.h"               // Для FDCAN_HandleTypeDef
 #include "shared_resources.h"   // Для extern объявлений очередей
-#include "can_message.h"        // Для нашей структуры CanMessage_t
-#include "command_protocol.h"   // Для перечисления CommandID_t
 #include "Dispatcher/can_packer.h"
-#include "Dispatcher/executor_simulator.h"
 #include "task_watchdog.h"
 
 
@@ -31,9 +28,18 @@ static uint8_t FDCAN_DlcToBytes(uint32_t data_length)
 		case FDCAN_DLC_BYTES_5:  return 5;
 		case FDCAN_DLC_BYTES_6:  return 6;
 		case FDCAN_DLC_BYTES_7:  return 7;
-		case FDCAN_DLC_BYTES_8:
-		default:                return 8;
+		case FDCAN_DLC_BYTES_8:  return 8;
+		default:                return 0;
 	}
+}
+
+static bool TaskCanHandler_IsValidTxFrame(const CAN_Message_t* msg)
+{
+	return msg != NULL &&
+			msg->is_extended &&
+			msg->dlc == CAN_PAYLOAD_SIZE &&
+			CAN_GET_MSG_TYPE(msg->id) == CAN_MSG_TYPE_COMMAND &&
+			CAN_GET_SRC_ADDR(msg->id) == CAN_ADDR_CONDUCTOR;
 }
 
 
@@ -88,12 +94,16 @@ void app_start_task_can_handler(void *argument)
 		{
 		Watchdog_Kick(TASK_ID_CAN_HANDLER);
 		if(xQueueReceive(can_tx_queue_handle, &tx_msg, pdMS_TO_TICKS(1000)) == pdPASS){
+			if (!TaskCanHandler_IsValidTxFrame(&tx_msg)) {
+				continue;
+				}
+
 			FDCAN_TxHeaderTypeDef hal_header;
 
 			// Заполнение заголовка HAL согласно Директиве 2.0
 
 			hal_header.Identifier          = tx_msg.id;
-			hal_header.IdType              = tx_msg.is_extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID;
+			hal_header.IdType              = FDCAN_EXTENDED_ID;
 	        hal_header.TxFrameType         = FDCAN_DATA_FRAME;
 	        hal_header.DataLength          = FDCAN_DLC_BYTES_8; // Всегда 8 байт для команд
 	        hal_header.ErrorStateIndicator = FDCAN_ESI_ACTIVE;

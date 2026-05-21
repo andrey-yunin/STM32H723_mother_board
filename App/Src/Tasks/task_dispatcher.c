@@ -13,10 +13,12 @@
 #include "app_init_checker.h"
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/dispatcher_io.h"
+#include "Dispatcher/host_direct_command_registry.h"
 #include "Dispatcher/host_recipe_operation.h"
 #include "Dispatcher/job_manager.h"
 #include "task_watchdog.h"
 #include "Dispatcher/can_response_router.h"
+#include <stdbool.h>
 
 
 /**
@@ -25,6 +27,14 @@
 // Текущее состояние системы (static, чтобы быть видимым только в этом файле)
 
 static SystemState_t g_system_state = SYS_STATE_POWER_ON;
+static uint16_t g_system_error_code = HOST_ERR_OK;
+
+static bool Dispatcher_IsCommandAllowedInErrorState(uint16_t command_code)
+{
+	return command_code == HOST_CMD_GET_STATUS ||
+			command_code == HOST_CMD_GET_VERSION ||
+			command_code == HOST_CMD_GET_DATETIME;
+}
 
 void app_start_task_dispatcher(void *argument)
 {
@@ -74,7 +84,7 @@ void app_start_task_dispatcher(void *argument)
 
 			if (init_job_id == 0) {
 				Dispatcher_SendUsbResponse("CRITICAL ERROR: Failed to start system initialization job!");
-				g_system_state = SYS_STATE_ERROR;
+				SetSystemError(HOST_ERR_NOT_INIT);
 				}
 			osDelay(100);
 			}
@@ -153,7 +163,17 @@ void app_start_task_dispatcher(void *argument)
 								Parser_ProcessBinaryCommand(packet_buffer, buffer_idx);
 								}
 							else {
-								Dispatcher_SendUsbResponse("ERROR: System is not ready for binary commands.");
+								if (buffer_idx >= 7U) {
+									uint16_t command_code =
+											(uint16_t)(((uint16_t)packet_buffer[5] << 8) |
+													packet_buffer[6]);
+									if (Dispatcher_IsCommandAllowedInErrorState(command_code)) {
+										Parser_ProcessBinaryCommand(packet_buffer, buffer_idx);
+									}
+									else {
+										Dispatcher_SendError(command_code, g_system_error_code);
+									}
+								}
 								}
 							// Сброс состояния для ожидания нового пакета
 							parser_state = PARSER_STATE_WAIT_HEADER_1;
@@ -170,6 +190,13 @@ void app_start_task_dispatcher(void *argument)
 void SetSystemReady(void)
 {
 	g_system_state = SYS_STATE_READY;
+	g_system_error_code = HOST_ERR_OK;
+}
+
+void SetSystemBusy(void)
+{
+	g_system_state = SYS_STATE_BUSY;
+	g_system_error_code = HOST_ERR_BUSY;
 }
 
 /**
@@ -183,5 +210,15 @@ SystemState_t GetSystemState(void)
 	return g_system_state;
 }
 
+uint16_t GetSystemErrorCode(void)
+{
+	return g_system_error_code;
+}
 
-
+void SetSystemError(uint16_t error_code)
+{
+	g_system_state = SYS_STATE_ERROR;
+	g_system_error_code = (error_code != HOST_ERR_OK)
+			? error_code
+			: HOST_ERR_GENERAL;
+}

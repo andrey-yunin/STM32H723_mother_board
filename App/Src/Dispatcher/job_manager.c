@@ -8,13 +8,14 @@
 #include "Dispatcher/job_manager.h"
 #include "Dispatcher/recipe_store.h"
 #include "Dispatcher/recipe_executor_action_builder.h"
-#include "Dispatcher/calibrator.h"
+#include "Dispatcher/executor_transaction.h"
+#include "Dispatcher/executor_command_tx.h"
 #include "Dispatcher/dispatcher_io.h"
 #include "Dispatcher/can_response_router.h"
-#include "Dispatcher/system_mapping.h"
+#include "Dispatcher/service_manager.h"
 #include "shared_resources.h"
 #include "app_config.h"
-#include "app_init_checker.h"
+#include "task_dispatcher.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -29,47 +30,6 @@ typedef enum {
     JOB_STATUS_TIMEOUT = 4,
     JOB_STATUS_ERROR = 5
 } JobStatus_t;
-
-typedef enum {
-    JOB_RESPONSE_DONE_ONLY = 0,
-    JOB_RESPONSE_DATA_THEN_DONE,
-    JOB_RESPONSE_MULTI_DATA_THEN_DONE
-} JobResponsePolicy_t;
-
-typedef enum {
-    EXEC_TX_SENT = 1,
-    EXEC_TX_ACKED,
-    EXEC_TX_DATA_SEEN,
-    EXEC_TX_DONE,
-    EXEC_TX_NACK,
-    EXEC_TX_ACK_TIMEOUT,
-    EXEC_TX_OPERATION_TIMEOUT
-} ExecutorTransactionState_t;
-
-typedef struct {
-    bool active;
-    uint32_t job_id;
-
-    // Host command, на которую Дирижер формирует Host DATA/DONE.
-    uint16_t host_command_code;
-
-    // Low-level command, по которой исполнитель отвечает ACK/DATA/DONE/NACK.
-    uint16_t low_command_code;
-
-    uint8_t expected_node_id;
-    uint8_t expected_channel;
-    bool channel_valid;
-
-    JobResponsePolicy_t response_policy;
-    ExecutorTransactionState_t state;
-
-    uint32_t sent_time_ms;
-    uint32_t ack_timeout_ms;
-    uint32_t operation_timeout_ms;
-
-    uint16_t last_error_code;
-    uint8_t data_count;
-} ExecutorTransaction_t;
 
 typedef enum {
     JOB_INTERNAL_ACTION_WAIT_MS = 0
@@ -91,7 +51,7 @@ typedef struct {
     uint8_t pending_actions_count;
     uint32_t step_start_time_ms;
     uint32_t step_timeout_ms;
-    ExecutorTransaction_t transactions[JOB_MAX_EXECUTOR_TRANSACTIONS];
+    ExecutorTransactionTable_t transactions;
     UniversalCommand_t initial_cmd;
     JobInternalAction_t internal_actions[JOB_MAX_INTERNAL_ACTIONS];
 } JobContext_t;
@@ -103,45 +63,27 @@ static uint32_t g_next_job_id = 1;
 // --- Прототипы внутренних функций ---
 static JobContext_t* JobManager_FindFreeSlot(void);
 static void JobManager_ExecuteStep(JobContext_t* job);
-static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status);
+static void JobManager_CompleteJob(
+		JobContext_t* job,
+		JobStatus_t final_status,
+		uint16_t host_status_code);
 static void JobManager_SignalSystemReady(void);
 
-static bool JobManager_IsTerminalTransactionState(ExecutorTransactionState_t state);
 static void JobManager_ResetTransactions(JobContext_t* job);
-static bool JobManager_HasDuplicateActiveTransaction(
-		const JobContext_t* job,
-		uint16_t low_command_code,
-		uint8_t expected_node_id,
-		uint8_t expected_channel,
-		bool channel_valid);
-static ExecutorTransaction_t* JobManager_RegisterExecutorTransaction(
-		JobContext_t* job,
-        uint16_t low_command_code,
-        uint8_t expected_node_id,
-        uint8_t expected_channel,
-        bool channel_valid,
-        JobResponsePolicy_t response_policy,
-        uint32_t operation_timeout_ms);
-static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
-		JobContext_t* job,
-		const CanRoutedResponse_t* routed,
-		bool require_channel);
 static bool JobManager_TickElapsed(uint32_t start_ms, uint32_t timeout_ms);
 static bool JobManager_CompleteCurrentAction(JobContext_t* job, const char* source_label);
-static bool JobManager_StageCanTx(
+static bool JobManager_StageExecutorCommand(
 		JobContext_t* job,
-		CAN_Message_t* staged_msgs,
+		ExecutorCommandTxCommand_t* staged_commands,
 		uint8_t* staged_count,
-		const CAN_Message_t* msg,
-		const char* action_label);
+		const RecipeExecutorAction_t* executor_action);
 static bool JobManager_BuildAndStageExecutorAction(
         JobContext_t* job,
         const AtomicAction_t* action,
-        CAN_Message_t* staged_msgs,
+        ExecutorCommandTxCommand_t* staged_commands,
         uint8_t* staged_count);
 static JobContext_t* JobManager_FindJobForRoutedResponse(
 		const CanRoutedResponse_t* routed,
-		ExecutorTransaction_t** out_tx,
 		bool require_channel);
 static void JobManager_LogUnexpectedRoutedResponse(const CanRoutedResponse_t* routed, const char* reason);
 static void JobManager_HandleExecutorAck(const CanRoutedResponse_t* routed);
@@ -157,7 +99,9 @@ static JobInternalAction_t* JobManager_RegisterInternalAction(
         JobInternalActionType_t type,
         uint32_t duration_ms);
 static bool JobManager_CheckInternalActions(JobContext_t* job);
-static JobResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy);
+static ExecutorTransactionResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy);
+static uint16_t JobManager_MapExecutorNackToHostError(const ExecutorTransactionUpdate_t* update);
+static uint16_t JobManager_MapExecutorTxStatusToHostError(ExecutorCommandTxStatus_t status);
 
 /*
  * Расширяет timeout текущего шага recipe до требуемого значения.
@@ -171,25 +115,75 @@ static void JobManager_ExtendStepTimeout(JobContext_t* job, uint32_t required_ti
 		}
 }
 
-static JobResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy)
+static ExecutorTransactionResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy)
 {
     switch (policy) {
         case EXECUTOR_ACTION_RESPONSE_DATA_THEN_DONE:
-            return JOB_RESPONSE_DATA_THEN_DONE;
+            return EXECUTOR_TRANSACTION_RESPONSE_DATA_THEN_DONE;
 
         case EXECUTOR_ACTION_RESPONSE_MULTI_DATA_THEN_DONE:
-            return JOB_RESPONSE_MULTI_DATA_THEN_DONE;
+            return EXECUTOR_TRANSACTION_RESPONSE_MULTI_DATA_THEN_DONE;
 
         case EXECUTOR_ACTION_RESPONSE_DONE_ONLY:
         default:
-            return JOB_RESPONSE_DONE_ONLY;
+            return EXECUTOR_TRANSACTION_RESPONSE_DONE_ONLY;
     }
+}
+
+static uint16_t JobManager_MapExecutorNackToHostError(const ExecutorTransactionUpdate_t* update)
+{
+	if (update == NULL) {
+		return HOST_ERR_GENERAL;
+	}
+
+	switch (update->error_code) {
+		case CAN_NACK_ERR_UNKNOWN_CMD:
+			return HOST_ERR_UNKNOWN_CMD;
+
+		case CAN_NACK_ERR_INVALID_DEVICE_ID:
+		case CAN_NACK_ERR_INVALID_KEY:
+		case CAN_NACK_ERR_INVALID_PARAM:
+			return HOST_ERR_INVALID_PARAM;
+
+		case CAN_NACK_ERR_DEVICE_BUSY:
+			if (update->node_id == CAN_ADDR_THERMO_BOARD &&
+					(update->low_command_code == CAN_CMD_THERMO_GET_TEMP ||
+							update->low_command_code == CAN_CMD_THERMO_GET_ALL)) {
+				return HOST_ERR_HARDWARE;
+			}
+			return HOST_ERR_BUSY;
+
+		case CAN_NACK_ERR_FLASH_WRITE:
+			return HOST_ERR_HARDWARE;
+
+		case CAN_NACK_ERR_THERMO_BUSY:
+			return HOST_ERR_BUSY;
+
+		default:
+			return HOST_ERR_GENERAL;
+	}
+}
+
+static uint16_t JobManager_MapExecutorTxStatusToHostError(ExecutorCommandTxStatus_t status)
+{
+	switch (status) {
+		case EXECUTOR_COMMAND_TX_DUPLICATE_TRANSACTION:
+		case EXECUTOR_COMMAND_TX_QUEUE_FULL:
+			return HOST_ERR_BUSY;
+
+		case EXECUTOR_COMMAND_TX_INVALID_ARG:
+		case EXECUTOR_COMMAND_TX_INVALID_FRAME:
+		case EXECUTOR_COMMAND_TX_ROUTE_REGISTRATION_FAILED:
+		case EXECUTOR_COMMAND_TX_QUEUE_SEND_FAILED:
+		default:
+			return HOST_ERR_GENERAL;
+	}
 }
 
 static bool JobManager_BuildAndStageExecutorAction(
         JobContext_t* job,
         const AtomicAction_t* action,
-        CAN_Message_t* staged_msgs,
+        ExecutorCommandTxCommand_t* staged_commands,
         uint8_t* staged_count)
 {
     RecipeExecutorActionContext_t action_ctx = {
@@ -215,7 +209,7 @@ static bool JobManager_BuildAndStageExecutorAction(
                     (int)action->action);
         }
         Dispatcher_SendUsbResponse(info_msg);
-        JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+        JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_INVALID_PARAM);
         return false;
     }
 
@@ -227,25 +221,6 @@ static bool JobManager_BuildAndStageExecutorAction(
     }
 
     JobManager_ExtendStepTimeout(job, executor_action.operation_timeout_ms);
-
-    if (JobManager_RegisterExecutorTransaction(
-            job,
-            executor_action.low_command_code,
-            executor_action.node_id,
-            executor_action.channel,
-            executor_action.channel_valid,
-            JobManager_ResponsePolicyFromExecutorAction(executor_action.response_policy),
-            executor_action.operation_timeout_ms) == NULL) {
-        snprintf(info_msg, sizeof(info_msg),
-                "ERROR: Job #%lu: Cannot register %s transaction (Node:0x%02X, Ch:%u)",
-                (unsigned long)job->job_id,
-                executor_action.action_label,
-                executor_action.node_id,
-                executor_action.channel);
-        Dispatcher_SendUsbResponse(info_msg);
-        JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-        return false;
-    }
 
     switch (action->action) {
         case ACTION_ROTATE_MOTOR:
@@ -287,12 +262,11 @@ static bool JobManager_BuildAndStageExecutorAction(
     }
     Dispatcher_SendUsbResponse(info_msg);
 
-    return JobManager_StageCanTx(
+    return JobManager_StageExecutorCommand(
             job,
-            staged_msgs,
+            staged_commands,
             staged_count,
-            &executor_action.can_msg,
-            executor_action.action_label);
+            &executor_action);
 }
 
 /*
@@ -306,18 +280,6 @@ static bool JobManager_TickElapsed(uint32_t start_ms, uint32_t timeout_ms)
 }
 
 /*
- * Единая проверка terminal-состояний executor transaction.
- * Такие записи уже не должны участвовать в duplicate/matching/timeout логике.
- */
-static bool JobManager_IsTerminalTransactionState(ExecutorTransactionState_t state)
-{
-	return state == EXEC_TX_DONE ||
-			state == EXEC_TX_NACK ||
-			state == EXEC_TX_ACK_TIMEOUT ||
-			state == EXEC_TX_OPERATION_TIMEOUT;
-}
-
-/*
  * Очищает таблицу low-level executor transactions внутри Host job.
  * Вызывается при старте job/step и при завершении job, чтобы late responses
  * не могли совпасть со старым transaction context.
@@ -327,199 +289,11 @@ static void JobManager_ResetTransactions(JobContext_t* job)
 	if (job == NULL) {
 		return;
 		}
-	CanResponseRouter_CloseJob(job->job_id);
+	ExecutorTransactionTable_ResetOperation(
+            &job->transactions,
+            TX_OWNER_HOST_OPERATION,
+            job->job_id);
 	JobManager_ResetInternalActions(job);
-	memset(job->transactions, 0, sizeof(job->transactions));
-}
-
-/*
- * Проверяет, не регистрируем ли мы второй раз ту же самую low-level transaction.
- *
- * Это НЕ запрет параллельной работы с одним NodeID:
- * один executor node может обслуживать разные каналы или разные low-level команды.
- *
- * Запрещаем только неоднозначные дубли:
- * - тот же node_id;
- * - та же low-level command;
- * - тот же channel, если channel участвует в корреляции;
- * - command без валидного channel, потому что такой ответ нельзя надежно
- *   отличить от уже активной transaction.
- */
-static bool JobManager_HasDuplicateActiveTransaction(
-		const JobContext_t* job,
-		uint16_t low_command_code,
-		uint8_t expected_node_id,
-		uint8_t expected_channel,
-		bool channel_valid)
-{
-	if (job == NULL) {
-		return false;
-		}
-
-	for (uint8_t i = 0; i < JOB_MAX_EXECUTOR_TRANSACTIONS; i++) {
-		const ExecutorTransaction_t* tx = &job->transactions[i];
-
-		if (!tx->active) {
-			continue;
-			}
-
-		if (JobManager_IsTerminalTransactionState(tx->state)) {
-			continue;
-			}
-
-		if (tx->expected_node_id != expected_node_id) {
-			continue;
-			}
-
-		if (tx->low_command_code != low_command_code) {
-			continue;
-			}
-
-		if (!tx->channel_valid || !channel_valid) {
-			return true;
-			}
-
-		if (tx->expected_channel == expected_channel) {
-			return true;
-			}
-		}
-	return false;
-}
-
-/*
- * Регистрирует ожидаемую low-level executor transaction.
- *
- * Эта запись является промышленной точкой корреляции:
- * только response, совпавший с node_id + low_command_code + channel,
- * сможет продвинуть Host job или recipe step.
- *
- * Возвращает NULL, если:
- * - job некорректен;
- * - уже есть активная transaction с тем же node + command + channel context;
- * - таблица transactions заполнена.
- */
-static ExecutorTransaction_t* JobManager_RegisterExecutorTransaction(
-		JobContext_t* job,
-        uint16_t low_command_code,
-        uint8_t expected_node_id,
-        uint8_t expected_channel,
-        bool channel_valid,
-        JobResponsePolicy_t response_policy,
-        uint32_t operation_timeout_ms)
-{
-	if (job == NULL) {
-		return NULL;
-	}
-
-	if (JobManager_HasDuplicateActiveTransaction(
-			job,
-			low_command_code,
-			expected_node_id,
-			expected_channel,
-			channel_valid)) {
-		return NULL;
-	}
-
-	for (uint8_t i = 0; i < JOB_MAX_EXECUTOR_TRANSACTIONS; i++) {
-		ExecutorTransaction_t* tx = &job->transactions[i];
-
-		if (!tx->active) {
-			memset(tx, 0, sizeof(*tx));
-
-			tx->active = true;
-            tx->job_id = job->job_id;
-
-            // Host-команда, по которой Дирижер позже отправит Host DATA/DONE.
-            tx->host_command_code = job->initial_cmd.command_code;
-
-            // Low-level команда, по которой Executor вернет ACK/DATA/DONE/NACK.
-            tx->low_command_code = low_command_code;
-
-            tx->expected_node_id = expected_node_id;
-            tx->expected_channel = expected_channel;
-            tx->channel_valid = channel_valid;
-
-            tx->response_policy = response_policy;
-            tx->state = EXEC_TX_SENT;
-
-            tx->sent_time_ms = HAL_GetTick();
-            tx->ack_timeout_ms = JOB_ACK_TIMEOUT_MS;
-            tx->operation_timeout_ms = operation_timeout_ms;
-
-            tx->last_error_code = 0U;
-            tx->data_count = 0U;
-
-            if (!CanResponseRouter_Register(TX_OWNER_HOST_OPERATION,
-					expected_node_id,
-					low_command_code,
-					expected_channel,
-					channel_valid,
-					job->job_id,
-					tx->host_command_code)) {
-                memset(tx, 0, sizeof(*tx));
-                return NULL;
-            }
-
-            return tx;
-            }
-		}
-	return NULL;
-}
-
-/*
- * Ищет transaction, которой принадлежит входящий routed CAN response.
- *
- * Проверяется:
- * - source NodeID исполнителя;
- * - active command context из router-а;
- * - channel, если caller требует transaction-level match.
- *
- * Если channel не требуется и найдено больше одной подходящей transaction,
- * response считается неоднозначным и не продвигает job.
- */
-static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
-		JobContext_t* job,
-		const CanRoutedResponse_t* routed,
-		bool require_channel)
-{
-	if (job == NULL || routed == NULL || !routed->context_valid) {
-		return NULL;
-	}
-
-	const CAN_Response_t* response = &routed->parsed;
-	ExecutorTransaction_t* found = NULL;
-	bool check_channel = require_channel || routed->context_channel_valid;
-	uint8_t response_channel = routed->context_channel_valid
-			? routed->context_channel
-			: response->ch_idx;
-
-	for (uint8_t i = 0; i < JOB_MAX_EXECUTOR_TRANSACTIONS; i++) {
-		ExecutorTransaction_t* tx = &job->transactions[i];
-
-		if (!tx->active) {
-			continue;
-			}
-
-		if (tx->expected_node_id != response->source_addr) {
-			continue;
-			}
-
-		if (tx->low_command_code != routed->context_command_code) {
-			continue;
-			}
-
-		if (check_channel && tx->channel_valid &&
-				tx->expected_channel != response_channel) {
-			continue;
-			}
-
-		if (found != NULL) {
-			return NULL;
-			}
-
-		found = tx;
-		}
-	return found;
 }
 
 
@@ -559,14 +333,14 @@ static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
   * Физическая отправка выполняется только после успешной подготовки всех actions
   * шага, чтобы параллельный step стартовал атомарно на уровне Дирижера.
   */
- static bool JobManager_StageCanTx(
+static bool JobManager_StageExecutorCommand(
          JobContext_t* job,
-         CAN_Message_t* staged_msgs,
+         ExecutorCommandTxCommand_t* staged_commands,
          uint8_t* staged_count,
-         const CAN_Message_t* msg,
-         const char* action_label)
+         const RecipeExecutorAction_t* executor_action)
  {
-     if (job == NULL || staged_msgs == NULL || staged_count == NULL || msg == NULL) {
+     if (job == NULL || staged_commands == NULL ||
+             staged_count == NULL || executor_action == NULL) {
          return false;
      }
 
@@ -575,13 +349,27 @@ static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
          snprintf(err_msg, sizeof(err_msg),
                   "ERROR: Job #%lu: Too many CAN actions in step while staging %s.",
                   (unsigned long)job->job_id,
-                  action_label);
+                  executor_action->action_label);
          Dispatcher_SendUsbResponse(err_msg);
-         JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+         JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
          return false;
      }
 
-     staged_msgs[*staged_count] = *msg;
+     ExecutorCommandTxCommand_t* command = &staged_commands[*staged_count];
+     memset(command, 0, sizeof(*command));
+
+     command->frame = executor_action->can_msg;
+     command->transaction.route_owner = TX_OWNER_HOST_OPERATION;
+     command->transaction.operation_id = job->job_id;
+     command->transaction.host_command_code = job->initial_cmd.command_code;
+     command->transaction.low_command_code = executor_action->low_command_code;
+     command->transaction.expected_node_id = executor_action->node_id;
+     command->transaction.expected_channel = executor_action->channel;
+     command->transaction.channel_valid = executor_action->channel_valid;
+     command->transaction.response_policy =
+             JobManager_ResponsePolicyFromExecutorAction(executor_action->response_policy);
+     command->transaction.operation_timeout_ms = executor_action->operation_timeout_ms;
+
      (*staged_count)++;
      return true;
  }
@@ -589,16 +377,11 @@ static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
  /*
   * Находит running job и transaction, соответствующие routed CAN response.
   * Это финальная защита JobManager от late/service/foreign responses.
-  */
+ */
  static JobContext_t* JobManager_FindJobForRoutedResponse(
          const CanRoutedResponse_t* routed,
-         ExecutorTransaction_t** out_tx,
 		 bool require_channel)
  {
-     if (out_tx != NULL) {
-         *out_tx = NULL;
-     }
-
      if (routed == NULL) {
          return NULL;
      }
@@ -615,14 +398,10 @@ static ExecutorTransaction_t* JobManager_FindMatchingTransaction(
              continue;
          }
 
-         ExecutorTransaction_t* tx = JobManager_FindMatchingTransaction(
-				 job,
-				 routed,
-				 require_channel);
-         if (tx != NULL) {
-             if (out_tx != NULL) {
-                 *out_tx = tx;
-             }
+         if (ExecutorTransactionTable_HasMatching(
+                 &job->transactions,
+                 routed,
+                 require_channel)) {
              return job;
          }
      }
@@ -671,8 +450,8 @@ static void JobManager_HandleExecutorAck(const CanRoutedResponse_t* routed)
 		return;
 	}
 
-	const CAN_Response_t* response = &routed->parsed;
 	bool matched = false;
+	const char* no_match_reason = "no matching transaction for ACK";
 
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 		JobContext_t* job = &g_active_jobs[i];
@@ -686,26 +465,18 @@ static void JobManager_HandleExecutorAck(const CanRoutedResponse_t* routed)
 			continue;
 		}
 
-		for (uint8_t tx_idx = 0; tx_idx < JOB_MAX_EXECUTOR_TRANSACTIONS; tx_idx++) {
-			ExecutorTransaction_t* tx = &job->transactions[tx_idx];
-
-			if (!tx->active ||
-					JobManager_IsTerminalTransactionState(tx->state) ||
-					tx->expected_node_id != response->source_addr ||
-					tx->low_command_code != routed->context_command_code) {
-				continue;
-			}
-
+		ExecutorTransactionUpdate_t update =
+				ExecutorTransactionTable_HandleAck(&job->transactions, routed);
+		if (update.matched) {
 			matched = true;
-
-			if (tx->state == EXEC_TX_SENT) {
-				tx->state = EXEC_TX_ACKED;
-			}
+		}
+		else if (update.reason != NULL) {
+			no_match_reason = update.reason;
 		}
 	}
 
 	if (!matched) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "no matching transaction for ACK");
+		JobManager_LogUnexpectedRoutedResponse(routed, no_match_reason);
 	}
 }
 
@@ -723,12 +494,11 @@ static void JobManager_HandleExecutorNack(const CanRoutedResponse_t* routed)
 		return;
 	}
 
-	const CAN_Response_t* response = &routed->parsed;
 	bool matched = false;
+	const char* no_match_reason = "no matching transaction for NACK";
 
 	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
 		JobContext_t* job = &g_active_jobs[i];
-		bool job_matched = false;
 
 		if (job->status != JOB_STATUS_RUNNING) {
 			continue;
@@ -739,39 +509,32 @@ static void JobManager_HandleExecutorNack(const CanRoutedResponse_t* routed)
 			continue;
 		}
 
-		for (uint8_t tx_idx = 0; tx_idx < JOB_MAX_EXECUTOR_TRANSACTIONS; tx_idx++) {
-			ExecutorTransaction_t* tx = &job->transactions[tx_idx];
-
-			if (!tx->active ||
-					JobManager_IsTerminalTransactionState(tx->state) ||
-					tx->expected_node_id != response->source_addr ||
-					tx->low_command_code != routed->context_command_code) {
-				continue;
-			}
-
-			tx->state = EXEC_TX_NACK;
-			tx->last_error_code = response->error_code;
-			tx->active = false;
+		ExecutorTransactionUpdate_t update =
+				ExecutorTransactionTable_HandleNack(&job->transactions, routed);
+		if (update.matched) {
 			matched = true;
-			job_matched = true;
-		}
 
-		if (job_matched) {
 			char msg[APP_USB_RESP_MAX_LEN];
 			snprintf(msg, sizeof(msg),
 					"ERROR: Executor NACK matched: job=%lu node=0x%02X cmd=0x%04X err=0x%04X.",
 					(unsigned long)job->job_id,
-					response->source_addr,
-					routed->context_command_code,
-					response->error_code);
+					update.node_id,
+					update.low_command_code,
+					update.error_code);
 			Dispatcher_SendUsbResponse(msg);
 
-			JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+			JobManager_CompleteJob(
+					job,
+					JOB_STATUS_ERROR,
+					JobManager_MapExecutorNackToHostError(&update));
+		}
+		else if (update.reason != NULL) {
+			no_match_reason = update.reason;
 		}
 	}
 
 	if (!matched) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "no matching transaction for NACK");
+		JobManager_LogUnexpectedRoutedResponse(routed, no_match_reason);
 	}
 }
 
@@ -784,41 +547,28 @@ static void JobManager_HandleExecutorNack(const CanRoutedResponse_t* routed)
  */
 static void JobManager_HandleExecutorData(const CanRoutedResponse_t* routed)
 {
-	ExecutorTransaction_t* tx = NULL;
 	JobContext_t* job = JobManager_FindJobForRoutedResponse(
 			routed,
-			&tx,
 			routed != NULL && routed->context_channel_valid);
 
-	if (job == NULL || tx == NULL) {
+	if (job == NULL) {
 		JobManager_LogUnexpectedRoutedResponse(routed, "no matching transaction for DATA");
 		return;
 	}
 
-	if (tx->state == EXEC_TX_SENT) {
-		tx->state = EXEC_TX_ACKED;
-	}
-
-	if (tx->state != EXEC_TX_ACKED && tx->state != EXEC_TX_DATA_SEEN) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "DATA in invalid transaction state");
-		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+	ExecutorTransactionUpdate_t update =
+			ExecutorTransactionTable_HandleData(&job->transactions, routed);
+	if (!update.matched) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				update.reason != NULL ? update.reason : "no matching transaction for DATA");
 		return;
 	}
 
-	if (tx->response_policy == JOB_RESPONSE_DONE_ONLY) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "DATA for DONE_ONLY transaction");
-		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-		return;
+	if (update.event == EXECUTOR_TRANSACTION_EVENT_PROTOCOL_ERROR) {
+		JobManager_LogUnexpectedRoutedResponse(routed, update.reason);
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
 	}
-
-	if (tx->response_policy == JOB_RESPONSE_DATA_THEN_DONE && tx->data_count > 0U) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "extra DATA for DATA_THEN_DONE transaction");
-		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-		return;
-	}
-
-	tx->data_count++;
-	tx->state = EXEC_TX_DATA_SEEN;
 }
 
 /*
@@ -830,34 +580,27 @@ static void JobManager_HandleExecutorData(const CanRoutedResponse_t* routed)
  */
 static void JobManager_HandleExecutorDone(const CanRoutedResponse_t* routed)
 {
-	ExecutorTransaction_t* tx = NULL;
-	JobContext_t* job = JobManager_FindJobForRoutedResponse(routed, &tx, true);
+	JobContext_t* job = JobManager_FindJobForRoutedResponse(routed, true);
 
-	if (job == NULL || tx == NULL) {
+	if (job == NULL) {
 		JobManager_LogUnexpectedRoutedResponse(routed, "no matching transaction for DONE");
 		return;
 	}
 
-	if (tx->state == EXEC_TX_SENT) {
-		tx->state = EXEC_TX_ACKED;
-	}
-
-	if (tx->state != EXEC_TX_ACKED && tx->state != EXEC_TX_DATA_SEEN) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "DONE in invalid transaction state");
-		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+	ExecutorTransactionUpdate_t update =
+			ExecutorTransactionTable_HandleDone(&job->transactions, routed);
+	if (!update.matched) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				update.reason != NULL ? update.reason : "no matching transaction for DONE");
 		return;
 	}
 
-	if ((tx->response_policy == JOB_RESPONSE_DATA_THEN_DONE ||
-			tx->response_policy == JOB_RESPONSE_MULTI_DATA_THEN_DONE) &&
-			tx->data_count == 0U) {
-		JobManager_LogUnexpectedRoutedResponse(routed, "DONE before required DATA");
-		JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+	if (update.event == EXECUTOR_TRANSACTION_EVENT_PROTOCOL_ERROR) {
+		JobManager_LogUnexpectedRoutedResponse(routed, update.reason);
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
 		return;
 	}
-
-	tx->state = EXEC_TX_DONE;
-	tx->active = false;
 
 	JobManager_CompleteCurrentAction(job, "executor transaction");
 }
@@ -889,47 +632,31 @@ static void JobManager_HandleExecutorDone(const CanRoutedResponse_t* routed)
          return false;
      }
 
-     for (uint8_t i = 0; i < JOB_MAX_EXECUTOR_TRANSACTIONS; i++) {
-         ExecutorTransaction_t* tx = &job->transactions[i];
-
-         if (!tx->active) {
-             continue;
-         }
-
-         if (tx->state == EXEC_TX_SENT &&
-             JobManager_TickElapsed(tx->sent_time_ms, tx->ack_timeout_ms)) {
-             tx->state = EXEC_TX_ACK_TIMEOUT;
-
-             char msg[APP_USB_RESP_MAX_LEN];
-             snprintf(msg, sizeof(msg),
-                      "ERROR: Job #%lu ACK timeout: node=0x%02X cmd=0x%04X.",
-                      (unsigned long)job->job_id,
-                      tx->expected_node_id,
-                      tx->low_command_code);
-             Dispatcher_SendUsbResponse(msg);
-
-             JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
-             return true;
-         }
-
-         if ((tx->state == EXEC_TX_ACKED || tx->state == EXEC_TX_DATA_SEEN) &&
-             JobManager_TickElapsed(tx->sent_time_ms, tx->operation_timeout_ms)) {
-             tx->state = EXEC_TX_OPERATION_TIMEOUT;
-
-             char msg[APP_USB_RESP_MAX_LEN];
-             snprintf(msg, sizeof(msg),
-                      "ERROR: Job #%lu operation timeout: node=0x%02X cmd=0x%04X.",
-                      (unsigned long)job->job_id,
-                      tx->expected_node_id,
-                      tx->low_command_code);
-             Dispatcher_SendUsbResponse(msg);
-
-             JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
-             return true;
-         }
+     ExecutorTransactionUpdate_t update;
+     if (!ExecutorTransactionTable_CheckTimeouts(
+             &job->transactions,
+             HAL_GetTick(),
+             &update)) {
+         return false;
      }
 
-     return false;
+     char msg[APP_USB_RESP_MAX_LEN];
+     const char* timeout_label =
+             (update.event == EXECUTOR_TRANSACTION_EVENT_ACK_TIMEOUT)
+                     ? "ACK timeout"
+                     : "operation timeout";
+
+     snprintf(msg, sizeof(msg),
+              "ERROR: Job #%lu %s: node=0x%02X cmd=0x%04X.",
+              (unsigned long)job->job_id,
+              timeout_label,
+              update.node_id,
+              update.low_command_code);
+     Dispatcher_SendUsbResponse(msg);
+
+     ServiceManager_StartRecovery(update.node_id);
+     JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT, HOST_ERR_TIMEOUT);
+     return true;
 }
 
 /*
@@ -998,7 +725,7 @@ static bool JobManager_CheckInternalActions(JobContext_t* job)
 
 		default:
 			action->active = false;
-			JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+			JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
 			return true;
 			}
 		}
@@ -1032,7 +759,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 
     if (job == NULL) {
     	Dispatcher_SendUsbResponse("ERROR: No free job slots to start new job.");
-        Dispatcher_SendError(parsed_cmd->command_code, 0x0004); // ERR_BUSY / SYSTEM_BUSY
+        Dispatcher_SendError(parsed_cmd->command_code, HOST_ERR_BUSY);
         return 0;
     }
 
@@ -1049,7 +776,7 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
          char err_msg[APP_USB_RESP_MAX_LEN];
          snprintf(err_msg, sizeof(err_msg), "ERROR: Job %lu: Unknown recipe ID %d.", (unsigned long)job->job_id, (int)parsed_cmd->recipe_id);
          Dispatcher_SendUsbResponse(err_msg);
-         JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+         JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_NOT_SUPPORTED);
          return 0;
     }
     job->current_step_index = 0;
@@ -1067,95 +794,6 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     // Возвращаем сохраненный ID, так как job->job_id может быть уже равен 0
     return new_job_id;
 }
-
-// --- Helper functions for dynamic parameter retrieval ---
-/*
- * Возвращает uint8_t-параметр atomic action.
- * Источник параметра может быть статическим значением из recipe или полем,
- * разобранным из исходной Host-команды.
- */
-static uint8_t JobManager_GetUint8Param(const JobContext_t* job, ParamSource_t source, uint8_t static_value)
-{
-	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-		switch (source) {
-
-			case PARAM_SOURCE_CMD_INIT_MASK:
-				// This source is designed for the overall mask (e.g., in INIT command),
-				// not usually for a single motor_id value.
-				// However, if a parameter is *intended* to be the modules_mask value itself,
-				// it would be returned here. For specific motor_id, this case is less likely
-				// but included for completeness.
-				return job->initial_cmd.args.init.modules_mask;
-
-			case PARAM_SOURCE_DISPENSER_ID:
-				switch (job->initial_recipe_id) {
-					case RECIPE_DISPENSER_WASH:
-						return job->initial_cmd.args.dispenser_wash.dispenser_id;
-					case RECIPE_DISPENSER_ASPIRATE:
-						return job->initial_cmd.args.dispenser_aspirate.dispenser_id;
-					case RECIPE_DISPENSER_DISPENSE:
-						return job->initial_cmd.args.dispenser_dispense.dispenser_id;
-					default:
-						break;
-					}
-				break;
-
-			case PARAM_SOURCE_WASH_STATION_CYCLES:
-				return job->initial_cmd.args.wash_station_wash.cycles;
-
-			 case PARAM_SOURCE_MIXER_ID:
-				 return job->initial_cmd.args.mixer_mix.mixer_id;
-
-			 case PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK:
-				 return job->initial_cmd.args.photometer_scan_single.wavelength_mask;
-
-
-
-				// Add other uint8_t sources here as needed for other commands
-
-
-				default:
-					break; // Fall through to static_value if source not found or is static
-					}
-		}
-	return static_value; // Return static value if not parsed or source is static
-}
-
-/*
- * Возвращает uint32_t-параметр atomic action.
- * Используется для длительностей и других физических величин; при необходимости
- * вызывает calibrator/translator, а не хранит расчеты в parser-е.
- */
-static uint32_t JobManager_GetUint32Param(const JobContext_t* job, ParamSource_t source, uint32_t static_value)
-{
-	if (job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-		switch (source) {
-			// case PARAM_SOURCE_CMD_DISPENSER_VOLUME: // This old source is removed
-				// return job->initial_cmd.args.dispenser_wash.volume;
-		case PARAM_SOURCE_WASH_STATION_FILL_DURATION_MS: {
-			uint32_t duration_ms = 0;
-			if (!Calibrator_PumpVolumeToDurationMs(SYS_WASH_PUMP_FILL,
-					job->initial_cmd.args.wash_station_fill.volume_ul,
-					CAL_PUMP_OP_FILL,
-					&duration_ms)) {
-				return 0;
-				}
-			return duration_ms;
-			}
-
-		case PARAM_SOURCE_MIXER_PADDLE_DURATION_MS:
-			return job->initial_cmd.args.mixer_mix.duration_ms;
-
-		// Add other uint32_t sources here as needed
-		// For example:
-		// case PARAM_SOURCE_CMD_WAIT_DELAY: return job->initial_cmd.args.wait.delay_ms;
-		default:
-			break; // Fall through to static_value
-			}
-		}
-	return static_value;
-}
-
 
 /*
  * Основной polling-runner JobManager.
@@ -1228,7 +866,7 @@ void JobManager_Run(void)
                       (unsigned long)job->job_id,
                       (unsigned int)job->current_step_index);
              Dispatcher_SendUsbResponse(err_msg);
-             JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT);
+             JobManager_CompleteJob(job, JOB_STATUS_TIMEOUT, HOST_ERR_TIMEOUT);
              continue;
          }
       }
@@ -1264,7 +902,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 {
     const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
     if (current_step->atomic_actions == NULL || current_step->num_actions == 0) {
-        JobManager_CompleteJob(job, JOB_STATUS_COMPLETED);
+        JobManager_CompleteJob(job, JOB_STATUS_COMPLETED, HOST_STATUS_OK);
         return;
     }
 
@@ -1286,8 +924,8 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             (unsigned int)current_step->num_actions);
     Dispatcher_SendUsbResponse(info_msg);
 
-    CAN_Message_t staged_can_msgs[JOB_MAX_EXECUTOR_TRANSACTIONS];
-    uint8_t staged_can_msg_count = 0U;
+    ExecutorCommandTxCommand_t staged_commands[JOB_MAX_EXECUTOR_TRANSACTIONS];
+    uint8_t staged_command_count = 0U;
 
     for (int i = 0; i < current_step->num_actions; i++) {
         const AtomicAction_t* action = &current_step->atomic_actions[i];
@@ -1301,18 +939,25 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                 if (!JobManager_BuildAndStageExecutorAction(
                         job,
                         action,
-                        staged_can_msgs,
-                        &staged_can_msg_count)) {
+                        staged_commands,
+                        &staged_command_count)) {
                     return;
                 }
                 break;
             }
 
             case ACTION_WAIT_MS: {
-                uint32_t delay_ms = JobManager_GetUint32Param(
-                        job,
-                        action->params.wait.delay_ms_source,
-                        action->params.wait.delay_ms);
+                if (action->params.wait.delay_ms_source != PARAM_SOURCE_STATIC) {
+                    snprintf(info_msg, sizeof(info_msg),
+                            "ERROR: Job #%lu: WAIT_MS supports only static delay source (%u).",
+                            (unsigned long)job->job_id,
+                            (unsigned int)action->params.wait.delay_ms_source);
+                    Dispatcher_SendUsbResponse(info_msg);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+                    return;
+                }
+
+                uint32_t delay_ms = action->params.wait.delay_ms;
 
                 if (JobManager_RegisterInternalAction(
                         job,
@@ -1323,7 +968,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                             (unsigned long)job->job_id,
                             (unsigned long)delay_ms);
                     Dispatcher_SendUsbResponse(info_msg);
-                    JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                    JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_BUSY);
                     return;
                 }
 
@@ -1340,14 +985,14 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             }
 
             case ACTION_PERFORM_SCAN: {
-                uint8_t sys_id = JobManager_GetUint8Param(
-                        job,
-                        action->params.perform_scan.photometer_id_source,
-                        action->params.perform_scan.photometer_id);
-                uint8_t mask = JobManager_GetUint8Param(
-                        job,
-                        action->params.perform_scan.wavelength_mask_source,
-                        action->params.perform_scan.wavelength_mask);
+                uint8_t sys_id = action->params.perform_scan.photometer_id;
+                uint8_t mask = action->params.perform_scan.wavelength_mask;
+
+                if (action->params.perform_scan.wavelength_mask_source ==
+                        PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK &&
+                        job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
+                    mask = job->initial_cmd.args.photometer_scan_single.wavelength_mask;
+                }
 
                 snprintf(info_msg, sizeof(info_msg),
                         "ERROR: Job #%lu: ACTION_PERFORM_SCAN unsupported "
@@ -1357,7 +1002,7 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                         mask);
                 Dispatcher_SendUsbResponse(info_msg);
 
-                JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_NOT_SUPPORTED);
                 return;
             }
 
@@ -1367,33 +1012,26 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                         (unsigned long)job->job_id,
                         (int)action->action);
                 Dispatcher_SendUsbResponse(info_msg);
-                JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+                JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
                 return;
         }
     }
 
-    if (staged_can_msg_count > 0U &&
-            uxQueueSpacesAvailable(can_tx_queue_handle) < staged_can_msg_count) {
+    ExecutorCommandTxStatus_t tx_status = ExecutorCommandTx_SubmitBatch(
+            &job->transactions,
+            staged_commands,
+            staged_command_count);
+    if (tx_status != EXECUTOR_COMMAND_TX_OK) {
         snprintf(info_msg, sizeof(info_msg),
-                "ERROR: Job #%lu: CAN TX queue has no room for %u staged actions.",
+                "ERROR: Job #%lu: Executor command TX failed: %s.",
                 (unsigned long)job->job_id,
-                (unsigned int)staged_can_msg_count);
+                ExecutorCommandTx_StatusString(tx_status));
         Dispatcher_SendUsbResponse(info_msg);
-        JobManager_CompleteJob(job, JOB_STATUS_ERROR);
+        JobManager_CompleteJob(
+				job,
+				JOB_STATUS_ERROR,
+				JobManager_MapExecutorTxStatusToHostError(tx_status));
         return;
-    }
-
-    for (uint8_t i = 0; i < staged_can_msg_count; i++) {
-        if (xQueueSend(can_tx_queue_handle, &staged_can_msgs[i], 0) != pdPASS) {
-            snprintf(info_msg, sizeof(info_msg),
-                    "ERROR: Job #%lu: Failed to enqueue staged CAN action %u/%u.",
-                    (unsigned long)job->job_id,
-                    (unsigned int)(i + 1U),
-                    (unsigned int)staged_can_msg_count);
-            Dispatcher_SendUsbResponse(info_msg);
-            JobManager_CompleteJob(job, JOB_STATUS_ERROR);
-            return;
-        }
     }
 
     if (job->pending_actions_count == 0U) {
@@ -1408,16 +1046,24 @@ static void JobManager_ExecuteStep(JobContext_t* job)
  * Executor DONE не должен попадать сюда напрямую: сначала он должен закрыть
  * соответствующую executor transaction или внутренний action.
  */
-static void JobManager_CompleteJob(JobContext_t* job, JobStatus_t final_status)
+static void JobManager_CompleteJob(
+		JobContext_t* job,
+		JobStatus_t final_status,
+		uint16_t host_status_code)
 {
 	job->status = final_status;
     char final_msg[APP_USB_RESP_MAX_LEN];
     snprintf(final_msg, sizeof(final_msg), "INFO: Job #%lu finished with status %d.", (unsigned long)job->job_id, final_status);
     Dispatcher_SendUsbResponse(final_msg);
 
-    // Отправляем бинарный DONE-ответ
-    // 0x0000 - успешное завершение, другие коды - для ошибок/статусов
-    uint16_t done_status_code = (final_status == JOB_STATUS_COMPLETED) ? 0x0000 : 0x0001;
+    // Отправляем бинарный DONE-ответ.
+    uint16_t done_status_code = host_status_code;
+    if (final_status == JOB_STATUS_COMPLETED) {
+		done_status_code = HOST_STATUS_OK;
+	}
+	else if (done_status_code == HOST_STATUS_OK) {
+		done_status_code = HOST_ERR_GENERAL;
+    }
     Dispatcher_SendDone(job->initial_cmd.command_code, done_status_code);
 
 

@@ -34,6 +34,7 @@
 #include "shared_resources.h"
 #include "app_config.h"
 #include "app_init_checker.h"
+#include "app_safety.h"
 #include "Dispatcher/can_response_router.h"
 
 
@@ -218,20 +219,13 @@ can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, sizeof(CAN_Message_t
 
 
 
-log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , sizeof(USB_TxPacket_t)); // 30 сообщений для лога, каждое до 128 байт
-
-// Важно: всегда проверяйте, что очереди успешно создались!
-// Если какая-либо очередь не создалась (handle == NULL),
-// это указывает на нехватку памяти FreeRTOS (heap).
-
-// Вызываем функцию проверки всех очередей
- //app_init_checker_verifyqueues();
+log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH, sizeof(LoggerMessage_t)); // Логическая очередь логов; sink подключает task_logger.
 
 /* Cоздаем Stream Buffer для бинарных данных USB */
 // Размер буфера 1024 байта, задача будет разблокирована при поступлении хотя бы 1 байта
   usb_rx_stream_buffer_handle = xStreamBufferCreate(1024, 1); // <-- ДОБАВЛЕНО
 
-
+  app_init_checker_verifyqueues();
 
   /* USER CODE END RTOS_QUEUES */
 
@@ -255,7 +249,7 @@ log_queue_handle = xQueueCreate(APP_LOG_QUEUE_LENGTH , sizeof(USB_TxPacket_t)); 
   task_loggerHandle = osThreadNew(start_task_logger, NULL, &task_logger_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  app_init_checker_verifytasks();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -638,7 +632,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  AppSafety_OnFatalError();
+
   __disable_irq();
   while (1)
   {

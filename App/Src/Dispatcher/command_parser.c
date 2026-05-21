@@ -125,7 +125,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     uint8_t received_crc = packet[len - 1];
 
     if (calculated_crc != received_crc) {
-        Dispatcher_SendNack(command_code, 0x0002);
+        Dispatcher_SendNack(command_code, HOST_ERR_CRC);
         return;
     }
 
@@ -136,7 +136,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
 
     if (params_len > 0) {
         if (params_len > MAX_BINARY_ARGS_SIZE) {
-             Dispatcher_SendError(command_code, 0x0005);
+             Dispatcher_SendError(command_code, HOST_ERR_BUFFER_OVERFLOW);
              return;
         }
         cmd.args_type = ARGS_TYPE_BINARY;
@@ -154,7 +154,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
     if (direct_cmd != NULL) {
         if (params_len < direct_cmd->min_params_len ||
                 params_len > direct_cmd->max_params_len) {
-            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            Dispatcher_SendNack(command_code, HOST_ERR_INVALID_PARAM);
             return;
         }
 
@@ -174,7 +174,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
 
         if (params_len < recipe_cmd->min_params_len ||
                 params_len > recipe_cmd->max_params_len) {
-            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            Dispatcher_SendNack(command_code, HOST_ERR_INVALID_PARAM);
             return;
         }
 
@@ -183,7 +183,7 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
 
         bool parse_success = Parameters_Parse(&cmd, &packet[7], params_len);
         if (!parse_success) {
-            Dispatcher_SendNack(command_code, 0x0003); // ERR_INVALID_PARAMS
+            Dispatcher_SendNack(command_code, HOST_ERR_INVALID_PARAM);
             return;
         }
 
@@ -193,6 +193,6 @@ void Parser_ProcessBinaryCommand(uint8_t *packet, uint16_t len)
 
 
     // Если мы дошли до сюда, команда не была найдена ни в одной из таблиц.
-    Dispatcher_SendError(command_code, 0x0002); // ERR_UNKNOWN_COMMAND
+    Dispatcher_SendError(command_code, HOST_ERR_UNKNOWN_CMD);
     return;
 }

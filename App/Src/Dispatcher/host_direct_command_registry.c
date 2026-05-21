@@ -9,47 +9,47 @@
 #include "direct_command_handlers.h"
 
 static const HostDirectCommandDescriptor_t host_direct_command_table[] = {
-    {
-        .command_code = 0x1000,
-        .min_params_len = 0,
-        .max_params_len = 0,
-        .handler = handle_get_status
-    },
-    {
-        .command_code = 0x1003,
-        .min_params_len = 0,
-        .max_params_len = 0,
-        .handler = handle_get_version
-    },
-    {
-        .command_code = 0x1010,
-        .min_params_len = 0,
-        .max_params_len = 0,
-        .handler = handle_emergency_stop
-    },
-    {
-        .command_code = 0x1005,
-        .min_params_len = 0,
-        .max_params_len = 0,
-        .handler = handle_get_datetime
-    },
-    {
-        .command_code = 0x8000,
-        .min_params_len = 1,
-        .max_params_len = 1,
-        .handler = handle_thermo_get_temp
-    },
-    {
-        .command_code = 0x9010,
-        .min_params_len = 0,
-        .max_params_len = 0,
-        .handler = handle_sensor_get_all_temps
-    },
-    {
-        .command_code = 0x9011,
-        .min_params_len = 1,
-        .max_params_len = 1,
-        .handler = handle_sensor_get_temp
+	{
+	    .command_code = HOST_CMD_GET_STATUS,
+	    .min_params_len = 0,
+	    .max_params_len = 0,
+	    .handler = handle_get_status
+	},
+	{
+	    .command_code = HOST_CMD_GET_VERSION,
+	    .min_params_len = 0,
+	    .max_params_len = 0,
+	    .handler = handle_get_version
+	},
+	{
+	    .command_code = HOST_CMD_EMERGENCY_STOP,
+	    .min_params_len = 0,
+	    .max_params_len = 0,
+	    .handler = handle_emergency_stop
+	},
+	{
+	    .command_code = HOST_CMD_GET_DATETIME,
+	    .min_params_len = 0,
+	    .max_params_len = 0,
+	    .handler = handle_get_datetime
+	},
+	{
+	    .command_code = HOST_CMD_THERMO_GET_TEMP,
+	    .min_params_len = 1,
+	    .max_params_len = 1,
+	    .handler = handle_thermo_get_temp
+	},
+	{
+	    .command_code = HOST_CMD_SENSOR_GET_ALL_TEMPS,
+	    .min_params_len = 0,
+	    .max_params_len = 0,
+	    .handler = handle_sensor_get_all_temps
+	},
+	{
+	    .command_code = HOST_CMD_SENSOR_GET_TEMP,
+	    .min_params_len = 1,
+	    .max_params_len = 1,
+	    .handler = handle_sensor_get_temp
     },
 };
 

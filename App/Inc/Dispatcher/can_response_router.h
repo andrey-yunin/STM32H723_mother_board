@@ -60,6 +60,7 @@ bool CanResponseRouter_Register(CanTxOwner_t owner,
                                 uint16_t host_command_code);
 
 void CanResponseRouter_CloseJob(uint32_t job_id);
+void CanResponseRouter_CloseOperation(CanTxOwner_t owner, uint32_t operation_id);
 
 /*
  * Читает raw can_rx_queue_handle и раскладывает ответы в:

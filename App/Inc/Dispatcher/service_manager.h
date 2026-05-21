@@ -22,6 +22,7 @@ typedef struct {
 	uint8_t  node_id;       // NodeID (0x20, 0x30, 0x40)
 	uint8_t  device_type;   // Из ответа F001
     uint8_t  fw_ver[2];     // [Major, Minor]
+    uint8_t  channel_count; // Количество физических каналов из F001
     uint32_t uid[3];        // STM32 Unique ID (96-bit)
     bool     is_online;
     uint32_t last_seen_ms;
@@ -33,6 +34,13 @@ void ServiceManager_Init(void);
  * @brief Запуск процесса Discovery (Broadcast GetInfo)
  */
 void ServiceManager_StartDiscovery(void);
+
+/**
+ * @brief Запуск recovery discovery после executor timeout.
+ * @param target_node_id NodeID исполнителя, который должен снова пройти
+ *        discovery/UID/status перед возвратом системы в READY.
+ */
+void ServiceManager_StartRecovery(uint8_t target_node_id);
 
 /**
  * @brief Обработка сервисного ответа от узла

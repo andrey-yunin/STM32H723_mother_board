@@ -15,7 +15,7 @@
 
 
 // Объявления очередей
-// extern QueueHandle_t usb_rx_queue_handle;
+extern QueueHandle_t usb_rx_queue_handle;
 extern QueueHandle_t usb_tx_queue_handle;
 extern QueueHandle_t can_rx_queue_handle;
 extern QueueHandle_t can_job_rx_queue_handle;

@@ -8,6 +8,8 @@
 #ifndef TASK_DISPATCHER_H_
 #define TASK_DISPATCHER_H_
 
+#include <stdint.h>
+
 void app_start_task_dispatcher(void *argument);
 
 typedef enum {
@@ -18,7 +20,10 @@ typedef enum {
     SYS_STATE_ERROR           // Произошла ошибка, требуется вмешательство
  } SystemState_t;
 
- SystemState_t GetSystemState(void);
+SystemState_t GetSystemState(void);
+uint16_t GetSystemErrorCode(void);
+void SetSystemReady(void);
+void SetSystemBusy(void);
+void SetSystemError(uint16_t error_code);
 
 #endif /* TASK_DISPATCHER_H_ */
-

@@ -6,10 +6,10 @@
  */
 
 #include "task_watchdog.h"
+#include "task_logger.h"
 #include "cmsis_os.h"
 #include "shared_resources.h"
 #include "app_config.h"
-#include "dispatcher_io.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -28,7 +28,6 @@ static const char *task_names[TASK_COUNT] = {
 void app_start_task_watchdog(void *argument)
 {
 	static uint32_t prev_heartbeats[TASK_COUNT] = {0};
-	USB_TxPacket_t log_packet;
 
 	// Первый цикл — дать задачам время на инициализацию
 	osDelay(pdMS_TO_TICKS(3000));
@@ -48,10 +47,10 @@ void app_start_task_watchdog(void *argument)
 			if (current == prev_heartbeats[i])
 				{
 				// Задача не отметилась — возможно зависла
-				int len = snprintf((char *)log_packet.data, APP_USB_RESP_MAX_LEN,
+				char log_message[APP_LOG_MESSAGE_MAX_LEN];
+				snprintf(log_message, sizeof(log_message),
 						"WARNING: Task %s not responding!", task_names[i]);
-				log_packet.length = (uint16_t)len;
-				xQueueSend(log_queue_handle, &log_packet, pdMS_TO_TICKS(50));
+				(void)Logger_LogText(log_message);
 				}
 			prev_heartbeats[i] = current;
 			}

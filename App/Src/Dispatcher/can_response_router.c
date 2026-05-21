@@ -13,6 +13,7 @@
 #include <string.h>
 
 #define ROUTER_TRACKED_ROUTES 8U
+#define ROUTER_BROADCAST_TEMPLATES 4U
 
 typedef struct {
 	bool active;
@@ -26,6 +27,17 @@ typedef struct {
 	CanRxRoute_t route;
 } ActiveRoute_t;
 
+typedef struct {
+	bool active;
+	CanTxOwner_t owner;
+	uint16_t command_code;
+	uint8_t channel;
+	bool channel_valid;
+	uint32_t job_id;
+	uint16_t host_command_code;
+	CanRxRoute_t route;
+} BroadcastRouteTemplate_t;
+
 /*
  * ВАЖНО О ПОТОКОБЕЗОПАСНОСТИ:
  *
@@ -33,12 +45,13 @@ typedef struct {
  * Таблицу меняют:
  * - CanResponseRouter_Register() при отправке low-level команды;
  * - CanResponseRouter_Run() при ACK/DONE/NACK;
- * - CanResponseRouter_CloseJob() при timeout/error/reset job-а.
+ * - CanResponseRouter_CloseOperation() при timeout/error/reset operation-а.
  *
  * Эти вызовы могут приходить из разных task context, поэтому все обращения
  * к таблице защищены короткими FreeRTOS critical sections.
  */
 static ActiveRoute_t g_active_routes[ROUTER_TRACKED_ROUTES];
+static BroadcastRouteTemplate_t g_broadcast_templates[ROUTER_BROADCAST_TEMPLATES];
 
 static bool Router_IsServiceCommand(uint16_t command_code)
 {
@@ -46,11 +59,11 @@ static bool Router_IsServiceCommand(uint16_t command_code)
 		case CAN_CMD_SRV_GET_INFO:
 		case CAN_CMD_SRV_REBOOT:
 		case CAN_CMD_SRV_COMMIT:
+		case CAN_CMD_SRV_GET_UID:
 		case CAN_CMD_SRV_SET_NODE_ID:
 		case CAN_CMD_SRV_FACTORY_RESET:
+		case CAN_CMD_SRV_GET_STATUS:
 		case CAN_CMD_SRV_SCAN_1WIRE:
-		case 0xF004U: // GET_UID, TODO: заменить на CAN_CMD_SRV_GET_UID
-		case 0xF007U: // GET_STATUS, TODO: заменить на CAN_CMD_SRV_GET_STATUS
 			return true;
 
 		default:
@@ -89,6 +102,34 @@ static ActiveRoute_t* Router_FindFreeRoute(void)
 			return &g_active_routes[i];
 			}
 	}
+
+	return NULL;
+}
+
+static BroadcastRouteTemplate_t* Router_FindFreeBroadcastTemplate(void)
+{
+	for (uint8_t i = 0; i < ROUTER_BROADCAST_TEMPLATES; i++) {
+		if (!g_broadcast_templates[i].active) {
+			return &g_broadcast_templates[i];
+			}
+		}
+
+	return NULL;
+}
+
+static BroadcastRouteTemplate_t* Router_FindBroadcastTemplate(
+		CanTxOwner_t owner,
+		uint16_t command_code)
+{
+	for (uint8_t i = 0; i < ROUTER_BROADCAST_TEMPLATES; i++) {
+		BroadcastRouteTemplate_t* route = &g_broadcast_templates[i];
+
+		if (route->active &&
+				route->owner == owner &&
+				route->command_code == command_code) {
+			return route;
+			}
+		}
 
 	return NULL;
 }
@@ -228,6 +269,57 @@ static ActiveRoute_t* Router_UpsertRoute(CanTxOwner_t owner,
 	return route;
 }
 
+static BroadcastRouteTemplate_t* Router_UpsertBroadcastTemplate(
+		CanTxOwner_t owner,
+		uint16_t command_code,
+		uint8_t channel,
+		bool channel_valid,
+		uint32_t job_id,
+		uint16_t host_command_code)
+{
+	BroadcastRouteTemplate_t* route = Router_FindBroadcastTemplate(owner,
+	                                                               command_code);
+
+	if (route == NULL) {
+		route = Router_FindFreeBroadcastTemplate();
+		}
+
+	if (route != NULL) {
+		memset(route, 0, sizeof(*route));
+		route->active = true;
+		route->owner = owner;
+		route->command_code = command_code;
+		route->channel = channel;
+		route->channel_valid = channel_valid;
+		route->job_id = job_id;
+		route->host_command_code = host_command_code;
+		route->route = Router_RouteForOwner(owner);
+		}
+
+	return route;
+}
+
+static ActiveRoute_t* Router_OpenRouteFromBroadcastTemplate(
+		uint8_t node_id,
+		uint16_t command_code)
+{
+	BroadcastRouteTemplate_t* template =
+			Router_FindBroadcastTemplate(Router_OwnerForCommand(command_code),
+			                             command_code);
+
+	if (template == NULL) {
+		return NULL;
+		}
+
+	return Router_UpsertRoute(template->owner,
+	                          node_id,
+	                          template->command_code,
+	                          template->channel,
+	                          template->channel_valid,
+	                          template->job_id,
+	                          template->host_command_code);
+}
+
 static void Router_CloseCommandRoutes(uint8_t node_id, uint16_t command_code)
 {
 	for (uint8_t i = 0; i < ROUTER_TRACKED_ROUTES; i++) {
@@ -255,6 +347,19 @@ static void Router_CloseDoneRoute(uint8_t node_id,
 		}
 }
 
+static void Router_CloseBroadcastTemplates(CanTxOwner_t owner, uint32_t operation_id)
+{
+	for (uint8_t i = 0; i < ROUTER_BROADCAST_TEMPLATES; i++) {
+		BroadcastRouteTemplate_t* route = &g_broadcast_templates[i];
+
+		if (route->active &&
+				route->owner == owner &&
+				route->job_id == operation_id) {
+			memset(route, 0, sizeof(*route));
+			}
+		}
+}
+
 static void Router_CopyContextFromRoute(const ActiveRoute_t* route,
                                         CanRoutedResponse_t* routed)
 {
@@ -275,6 +380,7 @@ static void Router_CopyContextFromRoute(const ActiveRoute_t* route,
 void CanResponseRouter_Init(void)
 {
 	memset(g_active_routes, 0, sizeof(g_active_routes));
+	memset(g_broadcast_templates, 0, sizeof(g_broadcast_templates));
 }
 
 bool CanResponseRouter_Register(CanTxOwner_t owner,
@@ -285,12 +391,17 @@ bool CanResponseRouter_Register(CanTxOwner_t owner,
                                 uint32_t job_id,
                                 uint16_t host_command_code)
 {
-	/*
-	 * Broadcast service discovery получает ответы от реальных source NodeID.
-	 * Для него route создается по ACK каждого узла, а не по broadcast-адресу.
-	 */
 	if (node_id == CAN_ADDR_BROADCAST && !channel_valid) {
-		return true;
+		taskENTER_CRITICAL();
+		BroadcastRouteTemplate_t* route = Router_UpsertBroadcastTemplate(
+				owner,
+				command_code,
+				channel,
+				channel_valid,
+				job_id,
+				host_command_code);
+		taskEXIT_CRITICAL();
+		return route != NULL;
 		}
 
 	taskENTER_CRITICAL();
@@ -306,9 +417,9 @@ bool CanResponseRouter_Register(CanTxOwner_t owner,
 	return route != NULL;
 }
 
-void CanResponseRouter_CloseJob(uint32_t job_id)
+void CanResponseRouter_CloseOperation(CanTxOwner_t owner, uint32_t operation_id)
 {
-	if (job_id == 0U) {
+	if (operation_id == 0U) {
 		return;
 		}
 
@@ -317,12 +428,18 @@ void CanResponseRouter_CloseJob(uint32_t job_id)
 		ActiveRoute_t* route = &g_active_routes[i];
 
 		if (route->active &&
-				route->owner == TX_OWNER_HOST_OPERATION &&
-				route->job_id == job_id) {
+				route->owner == owner &&
+				route->job_id == operation_id) {
 			memset(route, 0, sizeof(*route));
 			}
 		}
+	Router_CloseBroadcastTemplates(owner, operation_id);
 	taskEXIT_CRITICAL();
+}
+
+void CanResponseRouter_CloseJob(uint32_t job_id)
+{
+	CanResponseRouter_CloseOperation(TX_OWNER_HOST_OPERATION, job_id);
 }
 
 void CanResponseRouter_Run(void)
@@ -355,13 +472,18 @@ void CanResponseRouter_Run(void)
 
 			if (active == NULL) {
 				CanTxOwner_t owner = Router_OwnerForCommand(response.command_code);
-				active = Router_UpsertRoute(owner,
-				                            response.source_addr,
-				                            response.command_code,
-				                            0,
-				                            false,
-				                            0,
-				                            0);
+				active = Router_OpenRouteFromBroadcastTemplate(response.source_addr,
+				                                               response.command_code);
+
+				if (active == NULL && owner == TX_OWNER_HOST_OPERATION) {
+					active = Router_UpsertRoute(owner,
+					                            response.source_addr,
+					                            response.command_code,
+					                            0,
+					                            false,
+					                            0,
+					                            0);
+					}
 				}
 
 			/*
@@ -373,14 +495,21 @@ void CanResponseRouter_Run(void)
 				Router_CopyContextFromRoute(active, &routed);
 				}
 			else {
-				routed.route = Router_RouteForOwner(Router_OwnerForCommand(response.command_code));
+				CanTxOwner_t owner = Router_OwnerForCommand(response.command_code);
+				routed.route = Router_RouteForOwner(owner);
 				routed.context_valid = true;
+				routed.context_owner = owner;
 				routed.context_command_code = response.command_code;
 				}
 		}
 		else if (response.msg_type == CAN_MSG_TYPE_NACK) {
 			ActiveRoute_t* active = Router_FindFirstByNodeCommand(response.source_addr,
 			                                                      response.command_code);
+
+			if (active == NULL) {
+				active = Router_OpenRouteFromBroadcastTemplate(response.source_addr,
+				                                               response.command_code);
+				}
 
 			if (active != NULL) {
 				Router_CopyContextFromRoute(active, &routed);
