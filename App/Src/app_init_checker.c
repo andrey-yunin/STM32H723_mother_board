@@ -29,6 +29,8 @@ void app_init_checker_verifyqueues(void)
 			can_rx_queue_handle == NULL ||
 			can_job_rx_queue_handle == NULL ||
 			can_service_rx_queue_handle == NULL ||
+			can_safety_rx_queue_handle == NULL ||
+			can_host_direct_rx_queue_handle == NULL ||
 			can_tx_queue_handle == NULL ||
 			log_queue_handle == NULL)
 	{

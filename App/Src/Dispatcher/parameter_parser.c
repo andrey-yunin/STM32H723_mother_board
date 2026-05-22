@@ -6,7 +6,6 @@
  */
 
 #include "parameter_parser.h"
-#include "command_parser.h"
 #include <string.h> // для memcpy
 #include "param_translator.h" // added 06/02/2026
 

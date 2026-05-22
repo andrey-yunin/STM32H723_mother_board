@@ -9,6 +9,7 @@
 #include "Dispatcher/can_packer.h"
 #include "Dispatcher/executor_command_tx.h"
 #include "Dispatcher/dispatcher_io.h"
+#include "Dispatcher/safety_operation.h"
 #include "shared_resources.h"
 #include "app_config.h"
 #include "main.h"
@@ -268,17 +269,56 @@ static int ServiceManager_FindNodeIndex(uint8_t node_id)
 
 /*
  * Сброс volatile runtime одного inventory slot-а.
- * Вызывается ServiceManager_Init(), ServiceManager_StartDiscovery()
- * и ServiceManager_EnsureNodeIndex().
+ * Диагностический baseline F007 сохраняется при rediscovery/recovery того же
+ * slot-а, чтобы следующий GET_STATUS мог показать delta после fault event.
+ * Вызывается ServiceManager_StartDiscovery() и ServiceManager_EnsureNodeIndex().
  */
-static void ServiceManager_ResetNodeRuntime(uint8_t node_index)
+static void ServiceManager_ResetNodeRuntime(
+		uint8_t node_index,
+		bool preserve_diagnostics)
 {
 	if (node_index >= MAX_DISCOVERED_NODES) {
 		return;
 	}
 
+	uint32_t saved_status_last[SERVICE_STATUS_METRIC_COUNT];
+	bool saved_status_baseline_valid = false;
+
+	if (preserve_diagnostics) {
+		memcpy(saved_status_last,
+		       g_node_runtime[node_index].status_last,
+		       sizeof(saved_status_last));
+		saved_status_baseline_valid =
+				g_node_runtime[node_index].status_baseline_valid;
+	}
+
 	memset(&g_node_runtime[node_index], 0, sizeof(g_node_runtime[node_index]));
 	g_node_runtime[node_index].stage = SERVICE_NODE_STAGE_IDLE;
+
+	if (preserve_diagnostics) {
+		memcpy(g_node_runtime[node_index].status_last,
+		       saved_status_last,
+		       sizeof(g_node_runtime[node_index].status_last));
+		g_node_runtime[node_index].status_baseline_valid =
+				saved_status_baseline_valid;
+	}
+}
+
+/*
+ * Полный сброс diagnostic snapshot одного узла.
+ * Вызывается при обнаружении смены UID на том же NodeID.
+ */
+static void ServiceManager_ResetNodeDiagnostics(uint8_t node_index)
+{
+	if (node_index >= MAX_DISCOVERED_NODES) {
+		return;
+	}
+
+	ServiceNodeRuntime_t* runtime = &g_node_runtime[node_index];
+	memset(runtime->status_current, 0, sizeof(runtime->status_current));
+	memset(runtime->status_last, 0, sizeof(runtime->status_last));
+	runtime->status_seen_mask = 0U;
+	runtime->status_baseline_valid = false;
 }
 
 /*
@@ -305,7 +345,7 @@ static int ServiceManager_EnsureNodeIndex(uint8_t node_id)
 	node_index = (int)g_nodes_count++;
 	memset(&g_inventory[node_index], 0, sizeof(g_inventory[node_index]));
 	g_inventory[node_index].node_id = node_id;
-	ServiceManager_ResetNodeRuntime((uint8_t)node_index);
+	ServiceManager_ResetNodeRuntime((uint8_t)node_index, false);
 
 	return node_index;
 }
@@ -708,7 +748,9 @@ static void ServiceManager_CheckRecoveryComplete(void)
 
 		g_recovery_active = false;
 		g_recovery_target_node_id = CAN_ADDR_BROADCAST;
-		SetSystemReady();
+		if (!SafetyOperation_IsLatchedOrActive()) {
+			SetSystemReady();
+		}
 		return;
 	}
 
@@ -721,7 +763,9 @@ static void ServiceManager_CheckRecoveryComplete(void)
 
 		g_recovery_active = false;
 		g_recovery_target_node_id = CAN_ADDR_BROADCAST;
-		SetSystemError(HOST_ERR_NOT_INIT);
+		if (!SafetyOperation_IsLatchedOrActive()) {
+			SetSystemError(HOST_ERR_NOT_INIT);
+		}
 	}
 }
 
@@ -835,7 +879,23 @@ static void ServiceManager_HandleGetInfoDone(const CAN_Response_t* response)
 		return;
 	}
 
-	ServiceManager_ApplyUidBytes((uint8_t)node_index, g_inventory[node_index].uid);
+	uint32_t discovered_uid[SERVICE_UID_WORD_COUNT];
+	ServiceManager_ApplyUidBytes((uint8_t)node_index, discovered_uid);
+
+	if (runtime->status_baseline_valid &&
+			memcmp(g_inventory[node_index].uid,
+			       discovered_uid,
+			       sizeof(discovered_uid)) != 0) {
+		ServiceManager_ResetNodeDiagnostics((uint8_t)node_index);
+
+		char msg[APP_LOG_MESSAGE_MAX_LEN];
+		snprintf(msg, sizeof(msg),
+				"INFO: Service diagnostics baseline cleared after UID change: node=0x%02X.",
+				g_inventory[node_index].node_id);
+		ServiceManager_LogText(msg);
+	}
+
+	memcpy(g_inventory[node_index].uid, discovered_uid, sizeof(discovered_uid));
 	g_inventory[node_index].last_seen_ms = HAL_GetTick();
 	runtime->stage = SERVICE_NODE_STAGE_INFO_DONE;
 	runtime->active_operation_id = SERVICE_MANAGER_OPERATION_NONE;
@@ -1004,6 +1064,41 @@ static bool ServiceManager_StatusMetricIsFaultCounter(uint16_t metric_id)
 }
 
 /*
+ * Отбор монотонных счетчиков F007 для проверки reset/wrap snapshot-а.
+ * LAST_HAL_ERROR и LAST_ESR не являются счетчиками и могут уменьшаться штатно.
+ */
+static bool ServiceManager_StatusMetricIsCounter(uint16_t metric_id)
+{
+	return (metric_id >= SERVICE_STATUS_RX_TOTAL &&
+			metric_id <= SERVICE_STATUS_BUS_OFF) ||
+			metric_id == SERVICE_STATUS_APP_QUEUE_OVERFLOW;
+}
+
+/*
+ * Если executor перезагрузился, его common counters могут стать меньше
+ * сохраненного baseline-а. В этом случае delta не считается: текущий снимок
+ * становится новым baseline, чтобы не получить ложный большой delta.
+ */
+static bool ServiceManager_StatusSnapshotHasCounterReset(
+		const ServiceNodeRuntime_t* runtime)
+{
+	if (runtime == NULL || !runtime->status_baseline_valid) {
+		return false;
+	}
+
+	for (uint8_t i = 0; i < SERVICE_STATUS_METRIC_COUNT; i++) {
+		uint16_t metric_id = (uint16_t)(SERVICE_STATUS_FIRST_METRIC_ID + i);
+
+		if (ServiceManager_StatusMetricIsCounter(metric_id) &&
+				runtime->status_current[i] < runtime->status_last[i]) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
  * DATA handler для F007 GET_STATUS.
  * Вызывается ServiceManager_HandleData() после transaction validation.
  */
@@ -1073,6 +1168,17 @@ static void ServiceManager_HandleGetStatusDone(const CAN_Response_t* response)
 		char msg[APP_LOG_MESSAGE_MAX_LEN];
 		snprintf(msg, sizeof(msg),
 				"INFO: Service diagnostics baseline captured: node=0x%02X.",
+				g_inventory[node_index].node_id);
+		ServiceManager_LogText(msg);
+	}
+	else if (ServiceManager_StatusSnapshotHasCounterReset(runtime)) {
+		memcpy(runtime->status_last,
+		       runtime->status_current,
+		       sizeof(runtime->status_last));
+
+		char msg[APP_LOG_MESSAGE_MAX_LEN];
+		snprintf(msg, sizeof(msg),
+				"INFO: Service diagnostics baseline refreshed after counter reset: node=0x%02X.",
 				g_inventory[node_index].node_id);
 		ServiceManager_LogText(msg);
 	}
@@ -1335,7 +1441,7 @@ static void ServiceManager_StartDiscoveryInternal(bool force_restart)
 
 	for (uint8_t i = 0; i < MAX_DISCOVERED_NODES; i++) {
 		g_inventory[i].is_online = false;
-		ServiceManager_ResetNodeRuntime(i);
+		ServiceManager_ResetNodeRuntime(i, i < g_nodes_count);
 	}
 
 	g_discovery_operation_id = ServiceManager_NextOperationId();
@@ -1446,12 +1552,61 @@ bool ServiceManager_IsNodeOnline(uint8_t node_id)
 	return false;
 }
 
+bool ServiceManager_HasActiveOperationForNode(uint8_t node_id)
+{
+	if (g_discovery_window_active) {
+		return true;
+	}
+
+	int node_index = ServiceManager_FindNodeIndex(node_id);
+	if (node_index < 0) {
+		return false;
+	}
+
+	return g_node_runtime[node_index].active_operation_id != SERVICE_MANAGER_OPERATION_NONE;
+}
+
+bool ServiceManager_GetNodeChannelCount(uint8_t node_id, uint8_t* out_channel_count)
+{
+	if (out_channel_count == NULL) {
+		return false;
+	}
+
+	for (uint8_t i = 0; i < g_nodes_count; i++) {
+		if (g_inventory[i].node_id == node_id &&
+				g_inventory[i].is_online &&
+				g_node_runtime[i].stage == SERVICE_NODE_STAGE_READY) {
+			*out_channel_count = g_inventory[i].channel_count;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void ServiceManager_PauseForSafetyOperation(void)
+{
+	ServiceManager_ResetActiveServiceOperations();
+	g_discovery_window_active = false;
+	g_recovery_active = false;
+	g_recovery_target_node_id = CAN_ADDR_BROADCAST;
+
+	CanRoutedResponse_t routed;
+	while (xQueueReceive(can_service_rx_queue_handle, &routed, 0) == pdPASS) {
+	}
+}
+
 /*
  * Главный polling loop service layer.
  * Вызывается task_jobs_monitor после CanResponseRouter_Run() и до JobManager_Run().
  */
 void ServiceManager_Run(void)
 {
+	if (SafetyOperation_IsLatchedOrActive()) {
+		ServiceManager_PauseForSafetyOperation();
+		return;
+	}
+
 	ServiceManager_CheckDiscoveryWindowTimeout();
 	ServiceManager_HandleTransactionTimeouts();
 	ServiceManager_CheckRecoveryComplete();

@@ -1,739 +1,707 @@
-import serial
-import time
+#!/usr/bin/env python3
+"""
+Host-level acceptance scenarios for the STM32H723 Conductor.
+
+The script intentionally validates only the public Host protocol:
+ACK/NACK/ERROR, DATA and DONE. It does not use text logs as pass criteria,
+because firmware logs are now routed through a separate logger boundary.
+"""
+
+from __future__ import annotations
+
+import argparse
+import queue
 import struct
 import sys
 import threading
-import queue
+import time
+from collections.abc import Callable
 
-# --- НАСТРОЙКИ ---
-SERIAL_PORT = '/dev/ttyACM0'
+try:
+    import serial
+except ImportError:
+    serial = None
+
+SerialException = serial.SerialException if serial is not None else OSError
+
+# Defaults are kept as module globals because can_test.py imports this module
+# as the Host protocol helper.
+SERIAL_PORT = "/dev/ttyACM0"
 BAUD_RATE = 9600
-RESPONSE_TIMEOUT = 5  # Таймаут ожидания конкретного ответа (секунды)
+RESPONSE_TIMEOUT = 5.0
 
-# --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ КОММУНИКАЦИИ ---
-received_messages_queue = queue.Queue()
+received_messages_queue: queue.Queue[dict] = queue.Queue()
 stop_listening_event = threading.Event()
-ser = None
+ser: serial.Serial | None = None
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ПРОТОКОЛА ---
+
+HOST_RESPONSE_TYPE_NACK = 0x00
+HOST_RESPONSE_TYPE_ACK = 0x01
+HOST_RESPONSE_TYPE_DONE = 0x02
+HOST_RESPONSE_TYPE_DATA = 0x03
+HOST_RESPONSE_TYPE_ERROR = 0x04
+
+HOST_STATUS_OK = 0x0000
+HOST_ERR_UNKNOWN_CMD = 0x0002
+HOST_ERR_INVALID_PARAM = 0x0003
+HOST_ERR_CRC = 0x0007
+HOST_ERR_NOT_SUPPORTED = 0x000A
+
+CMD_GET_STATUS = 0x1000
+CMD_INIT = 0x1002
+CMD_GET_VERSION = 0x1003
+CMD_GET_DATETIME = 0x1005
+CMD_EMERGENCY_STOP = 0x1010
+CMD_DISPENSER_WASH = 0x2000
+CMD_DISPENSER_ASPIRATE = 0x2100
+CMD_DISPENSER_DISPENSE = 0x2200
+CMD_MIXER_MIX = 0x3100
+CMD_WASH_STATION_WASH = 0x4000
+CMD_WASH_STATION_FILL = 0x4100
+CMD_REAGENT_ROTATE = 0x5000
+CMD_SAMPLE_ROTATE = 0x5110
+CMD_PHOTOMETER_SCAN_SINGLE = 0x6100
+CMD_THERMO_GET_TEMP_LEGACY = 0x8000
+CMD_SENSOR_GET_ALL_TEMPS = 0x9010
+CMD_SENSOR_GET_TEMP = 0x9011
+
+
+TYPE_NAMES = {
+    HOST_RESPONSE_TYPE_NACK: "NACK",
+    HOST_RESPONSE_TYPE_ACK: "ACK",
+    HOST_RESPONSE_TYPE_DONE: "DONE",
+    HOST_RESPONSE_TYPE_DATA: "DATA",
+    HOST_RESPONSE_TYPE_ERROR: "ERROR",
+}
+
+
 def calculate_crc(data: bytes) -> int:
     crc = 0
     for byte in data:
         crc ^= byte
     return crc
 
-def build_command(command_code: int, params: bytes = b'') -> bytes:
-    header = b'CM>'
-    command_bytes = command_code.to_bytes(2, 'big')
-    length = len(command_bytes) + len(params) + 1
-    length_bytes = length.to_bytes(2, 'big')
+
+def build_command(command_code: int, params: bytes = b"") -> bytes:
+    header = b"CM>"
+    command_bytes = command_code.to_bytes(2, "big")
     crc_payload = command_bytes + params
-    crc = calculate_crc(crc_payload).to_bytes(1, 'big')
-    packet = header + length_bytes + crc_payload + crc
-    return packet
+    payload_len = len(crc_payload) + 1
+    crc = calculate_crc(crc_payload).to_bytes(1, "big")
+    return header + payload_len.to_bytes(2, "big") + crc_payload + crc
+
 
 def parse_response_packet(raw_data: bytes):
-    if len(raw_data) < 8 or not raw_data.startswith(b'CM>'):
+    if len(raw_data) < 8 or not raw_data.startswith(b"CM>"):
         return None, raw_data
 
     try:
-        payload_len = int.from_bytes(raw_data[3:5], 'big')
-
+        payload_len = int.from_bytes(raw_data[3:5], "big")
         if len(raw_data) < 5 + payload_len:
             return None, raw_data
 
-        packet_full_payload = raw_data[5 : 5 + payload_len]
-        command_code = int.from_bytes(packet_full_payload[0:2], 'big')
-        response_type = None
-        status_or_data = b''
+        packet_payload = raw_data[5 : 5 + payload_len]
+        command_code = int.from_bytes(packet_payload[0:2], "big")
 
         if payload_len == 6:
-            response_type = packet_full_payload[2]
-            status_or_data = packet_full_payload[3:-1]
+            response_type = packet_payload[2]
+            status_or_data = packet_payload[3:-1]
         elif payload_len > 6:
-            response_type = 0x03
-            status_or_data = packet_full_payload[2:-1]
+            response_type = HOST_RESPONSE_TYPE_DATA
+            status_or_data = packet_payload[2:-1]
         else:
-            print(f"WARNING: Unexpected payload length {payload_len} for command 0x{command_code:04x}.")
             response_type = 0xFF
-            status_or_data = packet_full_payload[2:-1]
+            status_or_data = packet_payload[2:-1]
 
-        received_crc = packet_full_payload[-1]
-        calculated_crc = calculate_crc(packet_full_payload[:-1])
-
+        received_crc = packet_payload[-1]
+        calculated_crc = calculate_crc(packet_payload[:-1])
         if calculated_crc != received_crc:
-            print(f"ERROR: CRC mismatch in received packet for command 0x{command_code:04x}. Raw: {raw_data.hex(' ')}")
+            print(
+                f"ERROR: CRC mismatch for 0x{command_code:04X}. "
+                f"Raw: {raw_data.hex(' ')}"
+            )
             return None, raw_data
 
-        response_info = {
+        return {
             "command_code": command_code,
             "response_type": response_type,
             "status_or_data": status_or_data,
-            "raw_packet": raw_data[ : 5 + payload_len]
-        }
-
-        remaining_data = raw_data[5 + payload_len:]
-        return response_info, remaining_data
-
-    except Exception as e:
-        print(f"Error parsing response: {e}, Raw data: {raw_data.hex(' ')}")
+            "raw_packet": raw_data[: 5 + payload_len],
+        }, raw_data[5 + payload_len :]
+    except Exception as exc:
+        print(f"ERROR: response parse failed: {exc}. Raw: {raw_data.hex(' ')}")
         return None, raw_data
 
-# --- ПОТОК ПРОСЛУШИВАНИЯ СЕРИЙНОГО ПОРТА ---
-def listen_serial_port():
+
+def listen_serial_port() -> None:
     global ser
-    if not ser or not ser.is_open:
-        print("ERROR: Serial port not open in listener thread.")
+    if ser is None or not ser.is_open:
+        print("ERROR: serial port is not open.")
         return
 
-    buffer = b''
+    buffer = b""
     while not stop_listening_event.is_set():
         try:
             byte = ser.read(1)
-            if byte:
-                buffer += byte
-                while True:
-                    cm_index = buffer.find(b'CM>')
-                    if cm_index != -1:
-                        if cm_index > 0:
-                            text_message = buffer[:cm_index].decode('utf-8', errors='ignore').strip()
-                            if text_message:
-                                received_messages_queue.put({"type": "text", "content": text_message})
-                            buffer = buffer[cm_index:]
-
-                        response_info, remaining_data = parse_response_packet(buffer)
-                        if response_info:
-                            received_messages_queue.put({"type": "binary", "content": response_info})
-                            buffer = remaining_data
-                        else:
-                            break
-                    else:
-                        newline_index = buffer.find(b'\n')
-                        if newline_index != -1:
-                            text_message = buffer[:newline_index].decode('utf-8', errors='ignore').strip()
-                            if text_message:
-                                received_messages_queue.put({"type": "text", "content": text_message})
-                            buffer = buffer[newline_index+1:]
-                        else:
-                            break
-            else:
+            if not byte:
                 time.sleep(0.01)
-        except Exception as e:
-            print(f"ERROR in listener thread: {e}")
+                continue
+
+            buffer += byte
+            while True:
+                cm_index = buffer.find(b"CM>")
+                if cm_index >= 0:
+                    if cm_index > 0:
+                        text = buffer[:cm_index].decode("utf-8", errors="ignore").strip()
+                        if text:
+                            received_messages_queue.put({"type": "text", "content": text})
+                        buffer = buffer[cm_index:]
+
+                    response, remaining = parse_response_packet(buffer)
+                    if response is None:
+                        break
+                    received_messages_queue.put({"type": "binary", "content": response})
+                    buffer = remaining
+                    continue
+
+                newline_index = buffer.find(b"\n")
+                if newline_index < 0:
+                    break
+
+                text = buffer[:newline_index].decode("utf-8", errors="ignore").strip()
+                if text:
+                    received_messages_queue.put({"type": "text", "content": text})
+                buffer = buffer[newline_index + 1 :]
+        except SerialException as exc:
+            print(f"ERROR: serial listener failed: {exc}")
             break
+        except Exception as exc:
+            print(f"ERROR: unexpected listener failure: {exc}")
+            break
+
     print("Listener thread stopped.")
 
-# --- ОСНОВНЫЕ ФУНКЦИИ ТЕСТИРОВАНИЯ ---
-def send_and_wait_ack(command_code: int, params: bytes = b'') -> bool:
-    global ser
-    command_packet = build_command(command_code, params)
-    print(f"Отправка команды 0x{command_code:04x}: {' '.join(f'{b:02x}' for b in command_packet)}")
-    ser.write(command_packet)
 
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT:
+def clear_queue() -> None:
+    while True:
+        try:
+            received_messages_queue.get_nowait()
+        except queue.Empty:
+            return
+
+
+def format_binary_message(msg: dict) -> str:
+    content = msg["content"]
+    command_code = content["command_code"]
+    response_type = content["response_type"]
+    type_name = TYPE_NAMES.get(response_type, f"TYPE_0x{response_type:02X}")
+    data = content["status_or_data"]
+
+    if response_type in (
+        HOST_RESPONSE_TYPE_NACK,
+        HOST_RESPONSE_TYPE_ACK,
+        HOST_RESPONSE_TYPE_DONE,
+        HOST_RESPONSE_TYPE_ERROR,
+    ) and len(data) >= 2:
+        status = int.from_bytes(data[:2], "big")
+        return f"{type_name} cmd=0x{command_code:04X} status=0x{status:04X}"
+
+    if response_type == HOST_RESPONSE_TYPE_DATA and len(data) >= 3:
+        embedded_type = data[0]
+        embedded_status = int.from_bytes(data[1:3], "big")
+        payload = data[3:]
+        return (
+            f"DATA cmd=0x{command_code:04X} embedded=0x{embedded_type:02X} "
+            f"status=0x{embedded_status:04X} payload={payload.hex(' ')}"
+        )
+
+    return f"{type_name} cmd=0x{command_code:04X} data={data.hex(' ')}"
+
+
+def print_message(msg: dict) -> None:
+    if msg["type"] == "text":
+        print(f"DEVICE TEXT: {msg['content']}")
+    elif msg["type"] == "binary":
+        print(f"DEVICE BIN: {format_binary_message(msg)}")
+
+
+def send_command(command_code: int, params: bytes = b"") -> None:
+    if ser is None:
+        raise RuntimeError("serial port is not open")
+
+    packet = build_command(command_code, params)
+    print(f"HOST -> 0x{command_code:04X}: {packet.hex(' ')}")
+    ser.write(packet)
+    ser.flush()
+
+
+def send_raw_packet(packet: bytes, label: str) -> None:
+    if ser is None:
+        raise RuntimeError("serial port is not open")
+
+    print(f"HOST -> {label}: {packet.hex(' ')}")
+    ser.write(packet)
+    ser.flush()
+
+
+def wait_for_response(
+    command_code: int,
+    response_types: set[int],
+    timeout_s: float | None = None,
+) -> dict | None:
+    timeout = RESPONSE_TIMEOUT if timeout_s is None else timeout_s
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
         try:
             msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x01:
-                print(f"Получен ACK/NACK для 0x{command_code:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                return True
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
         except queue.Empty:
             continue
-    print(f"ERROR: Таймаут ожидания ACK/NACK для команды 0x{command_code:04x}.")
-    return False
 
-def wait_for_done(command_code: int, expected_status: int = 0x0000) -> bool:
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == expected_status:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    return True
-                else:
-                    print(f"ERROR: Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}, ожидался 0x{expected_status:04x}.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
+        print_message(msg)
+        if msg["type"] != "binary":
             continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
 
-def wait_for_data_and_done(command_code: int, expected_data_len: int, expected_done_status: int = 0x0000) -> tuple[bool, bytes | None]:
-    print(f"Ожидание DATA и DONE для команды 0x{command_code:04x}...")
-    data_received = None
-    done_received = False
+        content = msg["content"]
+        if (
+            content["command_code"] == command_code
+            and content["response_type"] in response_types
+        ):
+            return msg
 
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary":
-                if msg["content"]["command_code"] == command_code:
-                    if msg["content"]["response_type"] == 0x03:
-                        actual_data_from_packet = msg["content"]["status_or_data"] [3:]
-                        if len(actual_data_from_packet) == expected_data_len:
-                            data_received = actual_data_from_packet
-                            embedded_response_type = msg["content"]["status_or_data"] [0]
-                            embedded_status = int.from_bytes(msg["content"]["status_or_data"] [1:3], 'big')
-                            print(f"DEBUG: DATA packet embedded Type: 0x{embedded_response_type:02x}, Status: 0x{embedded_status:04x}")
-                            print(f"Получен DATA для 0x{command_code:04x}. Данные: {data_received.hex(' ')}")
-                        else:
-                            print(f"WARNING: Получен DATA с некорректной длиной: {len(actual_data_from_packet)}, ожидалось {expected_data_len}.")
-                    elif msg["content"]["response_type"] == 0x02:
-                        done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                        if done_status == expected_done_status:
-                            done_received = True
-                            print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}.")
-                        else:
-                            print(f"ERROR: Получен DONE со статусом 0x{done_status:04x}, ожидался 0x{expected_done_status:04x}.")
-                            return False, None
-            else:
-                print(f"DEVICE: {msg['content']}")
+    expected = ", ".join(TYPE_NAMES.get(x, f"0x{x:02X}") for x in sorted(response_types))
+    print(f"ERROR: timeout waiting for 0x{command_code:04X} response in {{{expected}}}.")
+    return None
 
-            if data_received is not None and done_received:
-                return True, data_received
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DATA и/или DONE для команды 0x{command_code:04x}.")
-    return False, None
 
-def wait_for_log_message(partial_log: str, timeout: int = 5) -> bool:
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "text":
-                print(f"DEVICE: {msg['content']}")
-                if partial_log in msg["content"]:
-                    return True
-            elif msg["type"] == "binary":
-                print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    return False
+def response_status(msg: dict) -> int:
+    data = msg["content"]["status_or_data"]
+    return int.from_bytes(data[:2], "big") if len(data) >= 2 else 0xFFFF
 
-# --- ТЕСТОВЫЕ СЦЕНАРИИ ---
-def test_init_command(mask: int):
-    print("\n=== Тест команды INIT ===")
-    if not send_and_wait_ack(0x1002, mask.to_bytes(1, 'big')):
+
+def send_and_expect_ack(command_code: int, params: bytes = b"") -> bool:
+    send_command(command_code, params)
+    msg = wait_for_response(
+        command_code,
+        {HOST_RESPONSE_TYPE_ACK, HOST_RESPONSE_TYPE_NACK, HOST_RESPONSE_TYPE_ERROR},
+    )
+    if msg is None:
         return False
-    if not wait_for_done(0x1002):
+
+    response_type = msg["content"]["response_type"]
+    if response_type != HOST_RESPONSE_TYPE_ACK:
+        print(
+            f"ERROR: 0x{command_code:04X} expected ACK, got "
+            f"{TYPE_NAMES.get(response_type, response_type)} status=0x{response_status(msg):04X}."
+        )
         return False
-    print("=== Тест INIT пройден успешно ===")
     return True
 
-def test_get_status_command():
-    print("\n=== Тест команды GET_STATUS ===")
-    if not send_and_wait_ack(0x1000):
+
+def wait_for_done(command_code: int, expected_status: int = HOST_STATUS_OK) -> bool:
+    msg = wait_for_response(command_code, {HOST_RESPONSE_TYPE_DONE})
+    if msg is None:
         return False
 
-    success, data = wait_for_data_and_done(0x1000, expected_data_len=3)
-    if not success:
+    status = response_status(msg)
+    if status != expected_status:
+        print(
+            f"ERROR: DONE 0x{command_code:04X} status=0x{status:04X}, "
+            f"expected 0x{expected_status:04X}."
+        )
+        return False
+    return True
+
+
+def wait_for_error(command_code: int, expected_status: int) -> bool:
+    msg = wait_for_response(command_code, {HOST_RESPONSE_TYPE_ERROR})
+    if msg is None:
         return False
 
-    if data:
-        system_state = data[0]
-        error_code = int.from_bytes(data[1:3], 'big')
-        print(f"GET_STATUS: System State = 0x{system_state:02x}, Last Error = 0x{error_code:04x}")
-        return True
-    print("=== Тест GET_STATUS пройден успешно ===")
-    return False
-
-def test_sample_rotate_command(slot_number: int):
-    print(f"\n=== Тест команды SAMPLE_ROTATE (0x5110) для слота {slot_number} ===")
-    command_code = 0x5110
-    params = struct.pack('>H', slot_number)
-
-    if not send_and_wait_ack(command_code, params):
+    status = response_status(msg)
+    if status != expected_status:
+        print(
+            f"ERROR: ERROR 0x{command_code:04X} status=0x{status:04X}, "
+            f"expected 0x{expected_status:04X}."
+        )
         return False
+    return True
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:4, Steps:" # Motion 0x20, sample/reagent disk ch_idx 4
-    log_found = False
 
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
+def wait_for_data_and_done(
+    command_code: int,
+    expected_data_len: int | None = None,
+    expected_done_status: int = HOST_STATUS_OK,
+) -> tuple[bool, bytes | None]:
+    data_payload: bytes | None = None
+    done_received = False
+    deadline = time.monotonic() + RESPONSE_TIMEOUT * 2
+
+    while time.monotonic() < deadline:
         try:
             msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест SAMPLE_ROTATE для слота {slot_number} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
         except queue.Empty:
             continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
 
-def test_dispenser_aspirate_command(disp_id: int, src_type: int, pos: int, vol: int):
-    print(f"\n=== Тест команды DISPENSER_ASPIRATE (0x2100) для дозатора {disp_id}, источник 0x{src_type:02x}, позиция {pos}, объем {vol} мкл ===")
-    command_code = 0x2100
-    params = struct.pack('>BBHH', disp_id, src_type, pos, vol)
+        print_message(msg)
+        if msg["type"] != "binary":
+            continue
 
-    if not send_and_wait_ack(command_code, params):
+        content = msg["content"]
+        if content["command_code"] != command_code:
+            continue
+
+        if content["response_type"] == HOST_RESPONSE_TYPE_DATA:
+            raw = content["status_or_data"]
+            if len(raw) < 3:
+                print(f"ERROR: malformed DATA for 0x{command_code:04X}.")
+                return False, None
+
+            embedded_type = raw[0]
+            embedded_status = int.from_bytes(raw[1:3], "big")
+            payload = raw[3:]
+
+            if embedded_type != HOST_RESPONSE_TYPE_DATA or embedded_status != HOST_STATUS_OK:
+                print(
+                    f"ERROR: DATA 0x{command_code:04X} embedded=0x{embedded_type:02X} "
+                    f"status=0x{embedded_status:04X}."
+                )
+                return False, None
+
+            if expected_data_len is not None and len(payload) != expected_data_len:
+                print(
+                    f"ERROR: DATA 0x{command_code:04X} length={len(payload)}, "
+                    f"expected {expected_data_len}."
+                )
+                return False, None
+
+            data_payload = payload
+
+        elif content["response_type"] == HOST_RESPONSE_TYPE_DONE:
+            status = response_status(msg)
+            if status != expected_done_status:
+                print(
+                    f"ERROR: DONE 0x{command_code:04X} status=0x{status:04X}, "
+                    f"expected 0x{expected_done_status:04X}."
+                )
+                return False, None
+            done_received = True
+
+        if data_payload is not None and done_received:
+            return True, data_payload
+
+    print(f"ERROR: timeout waiting DATA + DONE for 0x{command_code:04X}.")
+    return False, None
+
+
+def run_ack_done_test(name: str, command_code: int, params: bytes = b"") -> bool:
+    print(f"\n=== {name} 0x{command_code:04X} ===")
+    return send_and_expect_ack(command_code, params) and wait_for_done(command_code)
+
+
+def test_init_command(mask: int) -> bool:
+    return run_ack_done_test("INIT", CMD_INIT, bytes([mask & 0xFF]))
+
+
+def test_get_status_command() -> bool:
+    print("\n=== GET_STATUS 0x1000 ===")
+    if not send_and_expect_ack(CMD_GET_STATUS):
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:2, Steps:" # Motion 0x20, dispenser plunger ch_idx 2
-    log_found = False
-
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест DISPENSER_ASPIRATE для дозатора {disp_id} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
-
-# --- ТЕСТ команды DISPENSER_DISPENSE ---
-def test_dispenser_dispense_command(disp_id: int, target_type: int, slot: int, vol: int):
-    print(f"\n=== Тест команды DISPENSER_DISPENSE (0x2200) для дозатора {disp_id}, назначение 0x{target_type:02x}, слот {slot}, объем {vol} мкл ===")
-    command_code = 0x2200
-    params = struct.pack('>BBHH', disp_id, target_type, slot, vol)
-
-    if not send_and_wait_ack(command_code, params):
+    success, data = wait_for_data_and_done(CMD_GET_STATUS, expected_data_len=3)
+    if not success or data is None:
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:2, Steps:" # Motion 0x20, dispenser plunger ch_idx 2
-    log_found = False
+    state = data[0]
+    last_error = int.from_bytes(data[1:3], "big")
+    print(f"GET_STATUS parsed: state=0x{state:02X}, last_error=0x{last_error:04X}")
+    return True
 
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест DISPENSER_DISPENSE для дозатора {disp_id} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
 
-# --- ТЕСТ команды REAGENT_ROTATE ---
-def test_reagent_rotate_command(rotor_id: int, slot_number: int):
-    print(f"\n=== Тест команды REAGENT_ROTATE (0x5000) для ротора {rotor_id}, слота {slot_number} ===")
-    command_code = 0x5000
-    params = struct.pack('>BH', rotor_id, slot_number)
+def test_get_version_command() -> bool:
+    print("\n=== GET_VERSION 0x1003 ===")
+    if not send_and_expect_ack(CMD_GET_VERSION):
+        return False
+    success, data = wait_for_data_and_done(CMD_GET_VERSION)
+    if success and data is not None:
+        print(f"GET_VERSION payload: {data.hex(' ')}")
+    return success
 
-    if not send_and_wait_ack(command_code, params):
+
+def test_get_datetime_command() -> bool:
+    print("\n=== GET_DATETIME 0x1005 ===")
+    if not send_and_expect_ack(CMD_GET_DATETIME):
+        return False
+    success, data = wait_for_data_and_done(CMD_GET_DATETIME)
+    if success and data is not None:
+        print(f"GET_DATETIME payload: {data.hex(' ')}")
+    return success
+
+
+def test_get_status_bad_crc() -> bool:
+    print("\n=== Protocol negative: GET_STATUS bad CRC ===")
+    packet = bytearray(build_command(CMD_GET_STATUS))
+    packet[-1] ^= 0xFF
+    send_raw_packet(bytes(packet), "0x1000 bad CRC")
+
+    msg = wait_for_response(CMD_GET_STATUS, {HOST_RESPONSE_TYPE_NACK})
+    if msg is None:
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:4, Steps:" # Motion 0x20, sample/reagent disk ch_idx 4
-    log_found = False
+    status = response_status(msg)
+    if status != HOST_ERR_CRC:
+        print(f"ERROR: bad CRC expected NACK 0x{HOST_ERR_CRC:04X}, got 0x{status:04X}.")
+        return False
+    return True
 
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест REAGENT_ROTATE для ротора {rotor_id}, слота {slot_number} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
 
-# --- ТЕСТ команды MIXER_MIX ---
-def test_mixer_mix_command(mixer_id: int, cuvette: int, duration: int, wash_cycles: int):
-    print(f"\n=== Тест команды MIXER_MIX (0x3100) для миксера {mixer_id}, кюветы {cuvette} ===")
-    command_code = 0x3100
-    # mixer_id (1) + cuvette (2) + duration (2) + wash_cycles (1) = 6 bytes
-    params = struct.pack('>BHHB', mixer_id, cuvette, duration, wash_cycles)
+def test_get_status_invalid_params() -> bool:
+    print("\n=== Protocol negative: GET_STATUS invalid params ===")
+    send_command(CMD_GET_STATUS, b"\x00")
 
-    if not send_and_wait_ack(command_code, params):
+    msg = wait_for_response(CMD_GET_STATUS, {HOST_RESPONSE_TYPE_NACK})
+    if msg is None:
         return False
 
-    expected_xy_log = "Sent ROTATE_MOTOR (Phys:32:5, Steps:" # Motion 0x20, mixer XY ch_idx 5
-    expected_paddle_log = f"Sent RUN_PUMP_DURATION (Phys:48:12, Duration:{duration})" # Fluidics 0x30, mixer paddle ch_idx 12
-    xy_log_found = False
-    paddle_log_found = False
+    status = response_status(msg)
+    if status != HOST_ERR_INVALID_PARAM:
+        print(
+            f"ERROR: invalid params expected NACK 0x{HOST_ERR_INVALID_PARAM:04X}, "
+            f"got 0x{status:04X}."
+        )
+        return False
+    return True
 
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not xy_log_found:
-                        print(f"WARNING: Log '{expected_xy_log}' не найден до DONE.")
-                    if not paddle_log_found:
-                        print(f"WARNING: Log '{expected_paddle_log}' не найден до DONE.")
-                    print(f"=== Тест MIXER_MIX для миксера {mixer_id} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_xy_log in msg["content"]:
-                        xy_log_found = True
-                    if expected_paddle_log in msg["content"]:
-                        paddle_log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
 
-# --- ТЕСТ команды PHOTOMETER_SCAN_SINGLE ---
-def test_photometer_scan_single_command(cuvette: int, wavelength_mask: int) -> bool:
-    print(f"\n=== Тест команды PHOTOMETER_SCAN_SINGLE (0x6100) для кюветы {cuvette}, маска 0x{wavelength_mask:02X} ===")
-    command_code = 0x6100
-    # cuvette (2 bytes) + wavelength_mask (1 byte) = 3 bytes
-    params = struct.pack('>HB', cuvette, wavelength_mask)
+def test_unknown_command() -> bool:
+    print("\n=== UNKNOWN COMMAND 0xFFFF ===")
+    send_command(0xFFFF)
+    return wait_for_error(0xFFFF, HOST_ERR_UNKNOWN_CMD)
 
-    if not send_and_wait_ack(command_code, params):
+
+def test_legacy_thermo_get_temp_unsupported() -> bool:
+    print("\n=== Legacy THERMO_GET_TEMP 0x8000 must stay unsupported ===")
+    send_command(CMD_THERMO_GET_TEMP_LEGACY, b"\x01")
+    return wait_for_error(CMD_THERMO_GET_TEMP_LEGACY, HOST_ERR_NOT_SUPPORTED)
+
+
+def test_photometer_scan_single_unsupported(cuvette: int, wavelength_mask: int) -> bool:
+    print("\n=== PHOTOMETER_SCAN_SINGLE explicit unsupported baseline ===")
+    params = struct.pack(">HB", cuvette, wavelength_mask)
+    if not send_and_expect_ack(CMD_PHOTOMETER_SCAN_SINGLE, params):
+        return False
+    return wait_for_done(CMD_PHOTOMETER_SCAN_SINGLE, HOST_ERR_NOT_SUPPORTED)
+
+
+def test_sensor_get_temp(sensor_id: int) -> bool:
+    print(f"\n=== SENSOR_GET_TEMP 0x9011 sensor_id={sensor_id} ===")
+    if not send_and_expect_ack(CMD_SENSOR_GET_TEMP, bytes([sensor_id & 0xFF])):
         return False
 
-    expected_log_part = f"Sent SCAN (SysID:1, Mask:0x{wavelength_mask:02X})" # Photometer logical SysID 1
-    log_found = False
-
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест PHOTOMETER_SCAN_SINGLE для кюветы {cuvette} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
-
-# --- ТЕСТ команды WASH_STATION_FILL ---
-def test_wash_station_fill_command(volume: int, cuvette: int) -> bool:
-    print(f"\n=== Тест команды WASH_STATION_FILL (0x4100): объем {volume} мкл, кювета {cuvette} ===")
-    command_code = 0x4100
-    # Host API: volume (2 байта, big-endian) + cuvette (2 байта, big-endian)
-    params = struct.pack('>HH', volume, cuvette)
-
-    if not send_and_wait_ack(command_code, params):
+    success, data = wait_for_data_and_done(CMD_SENSOR_GET_TEMP, expected_data_len=4)
+    if not success or data is None:
         return False
 
-    expected_log_part = "Sent RUN_PUMP_DURATION (Phys:48:10" # Fluidics 0x30 == 48, ch_idx 10
-    log_found = False
-
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест WASH_STATION_FILL: объем {volume} мкл, кювета {cuvette} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
+    returned_sensor_id = data[0]
+    temperature = int.from_bytes(data[1:3], "big", signed=True)
+    status = data[3]
+    print(
+        f"SENSOR_GET_TEMP parsed: sensor_id={returned_sensor_id}, "
+        f"temperature={temperature / 10:.1f} C, status={status}"
+    )
+    return returned_sensor_id == sensor_id
 
 
-# --- ТЕСТ команды WASH_STATION_WASH ---
-def test_wash_station_wash_command(cycles: int, cuvette: int) -> bool:
-    print(f"\n=== Тест команды WASH_STATION_WASH (0x4000) для {cycles} циклов, кюветы {cuvette} ===")
-
-    params = struct.pack('>BH', cycles, cuvette)
-
-    if not send_and_wait_ack(0x4000, params):
+def test_sensor_get_all_temps() -> bool:
+    print("\n=== SENSOR_GET_ALL_TEMPS 0x9010 ===")
+    if not send_and_expect_ack(CMD_SENSOR_GET_ALL_TEMPS):
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:3, Steps:" # Motion 0x20, reaction disk ch_idx 3
-    log_found = False
-
-    print(f"Ожидание DONE для команды 0x4000...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == 0x4000 and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x4000 со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест WASH_STATION_WASH для {cycles} циклов, кюветы {cuvette} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x4000.")
-    return False
-
-
-# --- ТЕСТ команды DISPENSER_WASH ---
-def test_dispenser_wash_command(dispenser_id: int, volume: int, cycles: int) -> bool:
-    print(f"\n=== Тест команды DISPENSER_WASH (0x2000) для дозатора {dispenser_id}, объем {volume} мкл, циклов {cycles} ===")
-    command_code = 0x2000
-    # dispenser_id (1) + volume (2) + cycles (1) = 4 bytes
-    params = struct.pack('>BHB', dispenser_id, volume, cycles)
-
-    if not send_and_wait_ack(command_code, params):
+    success, data = wait_for_data_and_done(CMD_SENSOR_GET_ALL_TEMPS)
+    if not success or data is None:
         return False
 
-    expected_log_part = "Sent ROTATE_MOTOR (Phys:32:0, Steps:" # Motion 0x20, dispenser XY ch_idx 0
-    log_found = False
+    if len(data) < 1:
+        print("ERROR: GET_ALL_TEMPS returned empty payload.")
+        return False
 
-    print(f"Ожидание DONE для команды 0x{command_code:04x}...")
-    start_time = time.time()
-    while time.time() - start_time < RESPONSE_TIMEOUT * 2:
-        try:
-            msg = received_messages_queue.get(timeout=0.1)
-            if msg["type"] == "binary" and msg["content"]["command_code"] == command_code and msg["content"]["response_type"] == 0x02:
-                done_status = int.from_bytes(msg["content"]["status_or_data"], 'big')
-                if done_status == 0x0000:
-                    print(f"Получен DONE для 0x{command_code:04x} со статусом 0x{done_status:04x}. Ответ: {msg['content']['raw_packet'].hex(' ')}")
-                    if not log_found:
-                        print(f"WARNING: Log '{expected_log_part}' не найден до DONE.")
-                    print(f"=== Тест DISPENSER_WASH для дозатора {dispenser_id} пройден успешно ===")
-                    return True
-                else:
-                    print(f"ERROR: DONE со статусом 0x{done_status:04x}, ожидался 0x0000.")
-                    return False
-            else:
-                if msg["type"] == "text":
-                    print(f"DEVICE: {msg['content']}")
-                    if expected_log_part in msg["content"]:
-                        log_found = True
-                elif msg["type"] == "binary":
-                    print(f"DEVICE (BIN): {msg['content']['raw_packet'].hex(' ')}")
-        except queue.Empty:
-            continue
-    print(f"ERROR: Таймаут ожидания DONE для команды 0x{command_code:04x}.")
-    return False
+    count = data[0]
+    expected_len = 1 + count * 4
+    if len(data) != expected_len:
+        print(f"ERROR: GET_ALL_TEMPS length={len(data)}, expected {expected_len}.")
+        return False
+
+    for idx in range(count):
+        offset = 1 + idx * 4
+        sensor_id = data[offset]
+        temperature = int.from_bytes(data[offset + 1 : offset + 3], "big", signed=True)
+        status = data[offset + 3]
+        print(f"  sensor_id={sensor_id}, temperature={temperature / 10:.1f} C, status={status}")
+    return True
 
 
-# --- ГЛАВНАЯ ФУНКЦИЯ ---
-def main():
+def test_emergency_stop() -> bool:
+    print("\n=== EMERGENCY_STOP 0x1010 ===")
+    return send_and_expect_ack(CMD_EMERGENCY_STOP) and wait_for_done(CMD_EMERGENCY_STOP)
+
+
+def build_recipe_tests() -> list[tuple[str, int, bytes]]:
+    return [
+        ("DISPENSER_WASH", CMD_DISPENSER_WASH, struct.pack(">BHB", 1, 1000, 5)),
+        ("WASH_STATION_WASH", CMD_WASH_STATION_WASH, struct.pack(">BH", 3, 10)),
+        ("WASH_STATION_FILL", CMD_WASH_STATION_FILL, struct.pack(">HH", 500, 10)),
+        ("SAMPLE_ROTATE", CMD_SAMPLE_ROTATE, struct.pack(">H", 5)),
+        ("DISPENSER_ASPIRATE sample", CMD_DISPENSER_ASPIRATE, struct.pack(">BBHH", 1, 0x03, 5, 10)),
+        ("DISPENSER_DISPENSE sample", CMD_DISPENSER_DISPENSE, struct.pack(">BBHH", 1, 0x01, 10, 10)),
+        ("REAGENT_ROTATE", CMD_REAGENT_ROTATE, struct.pack(">BH", 1, 3)),
+        ("DISPENSER_ASPIRATE reagent", CMD_DISPENSER_ASPIRATE, struct.pack(">BBHH", 1, 0x02, 3, 200)),
+        ("DISPENSER_DISPENSE reagent", CMD_DISPENSER_DISPENSE, struct.pack(">BBHH", 1, 0x01, 10, 200)),
+        ("MIXER_MIX", CMD_MIXER_MIX, struct.pack(">BHHB", 1, 10, 3000, 2)),
+    ]
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="DDS-240 Conductor Host protocol acceptance script",
+    )
+    parser.add_argument("-s", "--serial", default=SERIAL_PORT)
+    parser.add_argument("--timeout", type=float, default=RESPONSE_TIMEOUT)
+    parser.add_argument("--mask", type=lambda value: int(value, 0), default=0x01)
+    parser.add_argument("--skip-init", action="store_true")
+    parser.add_argument("--skip-recipes", action="store_true")
+    parser.add_argument(
+        "--host-only",
+        action="store_true",
+        help="Run only USB Host/parser/local-direct checks that do not require CAN executors.",
+    )
+    parser.add_argument(
+        "--listen-only",
+        action="store_true",
+        help="Open the USB CDC port and print incoming text/binary messages without sending commands.",
+    )
+    parser.add_argument(
+        "--listen-duration",
+        type=float,
+        default=10.0,
+        help="Duration for --listen-only, seconds.",
+    )
+    parser.add_argument("--include-thermo", action="store_true")
+    parser.add_argument("--include-unsupported", action="store_true")
+    parser.add_argument(
+        "--include-emergency",
+        action="store_true",
+        help="Runs EMERGENCY_STOP; system will require INIT/recovery afterwards.",
+    )
+    return parser.parse_args(argv)
+
+
+def open_serial(serial_port: str) -> threading.Thread:
     global ser
-    mask = 0xFF 
+    if serial is None:
+        raise RuntimeError(
+            "pyserial is not installed. Activate App_user/.venv or run: "
+            "python3 -m pip install pyserial"
+        )
 
-    print(f"Попытка подключения к порту {SERIAL_PORT}...")
+    print(f"Opening serial port {serial_port}...")
+    ser = serial.Serial(serial_port, BAUD_RATE, timeout=0)
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    clear_queue()
+
+    stop_listening_event.clear()
+    listener_thread = threading.Thread(target=listen_serial_port, daemon=True)
+    listener_thread.start()
+    return listener_thread
+
+
+def close_serial(listener_thread: threading.Thread | None) -> None:
+    global ser
+    stop_listening_event.set()
+    if listener_thread is not None:
+        listener_thread.join(timeout=2)
+    if ser is not None and ser.is_open:
+        ser.close()
+        print("Serial port closed.")
+
+
+def main(argv: list[str] | None = None) -> int:
+    global RESPONSE_TIMEOUT
+    args = parse_args(argv)
+    RESPONSE_TIMEOUT = args.timeout
+
+    listener_thread: threading.Thread | None = None
+    host_only_tests: list[tuple[str, Callable[[], bool]]] = [
+        ("GET_STATUS", test_get_status_command),
+        ("GET_VERSION", test_get_version_command),
+        ("GET_DATETIME", test_get_datetime_command),
+        ("GET_STATUS bad CRC", test_get_status_bad_crc),
+        ("GET_STATUS invalid params", test_get_status_invalid_params),
+    ]
+
+    tests: list[tuple[str, Callable[[], bool]]] = []
+
+    if args.host_only:
+        tests.extend(host_only_tests)
+    else:
+        if not args.skip_init:
+            tests.append(("INIT", lambda: test_init_command(args.mask)))
+
+        tests.extend(host_only_tests[:3])
+
+        if not args.skip_recipes:
+            for name, command_code, params in build_recipe_tests():
+                tests.append((name, lambda c=command_code, p=params, n=name: run_ack_done_test(n, c, p)))
+
+        if args.include_unsupported:
+            tests.append(("PHOTOMETER unsupported", lambda: test_photometer_scan_single_unsupported(10, 0x03)))
+            tests.append(("Legacy 0x8000 unsupported", test_legacy_thermo_get_temp_unsupported))
+            tests.append(("Unknown command", test_unknown_command))
+
+        if args.include_thermo:
+            tests.append(("SENSOR_GET_TEMP", lambda: test_sensor_get_temp(1)))
+            tests.append(("SENSOR_GET_ALL_TEMPS", test_sensor_get_all_temps))
+
+        if args.include_emergency:
+            tests.append(("EMERGENCY_STOP", test_emergency_stop))
+
     try:
-        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0)
-        print("Соединение установлено.")
-        time.sleep(2)
+        listener_thread = open_serial(args.serial)
 
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
-        
-        listener_thread = threading.Thread(target=listen_serial_port)
-        listener_thread.start()
-        print("Запущен поток прослушивания.")
+        if args.listen_only:
+            print(f"Listening for {args.listen_duration:.1f}s without sending Host commands...")
+            deadline = time.monotonic() + args.listen_duration
+            received_any = False
+            while time.monotonic() < deadline:
+                try:
+                    msg = received_messages_queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                received_any = True
+                print_message(msg)
 
-        while not received_messages_queue.empty():
-            received_messages_queue.get_nowait()
+            if not received_any:
+                print("No bytes/messages received from the device during listen window.")
+            return 0 if received_any else 1
 
-        # --- ЗАПУСК ТЕСТОВОГО СЦЕНАРИЯ "ЦИКЛ АНАЛИЗА ОБРАЗЦА" ---
-        print("\n" + "="*20 + " НАЧАЛО ТЕСТА: ЦИКЛ АНАЛИЗА ОБРАЗЦА " + "="*20)
-        all_tests_passed = True
-        
-        # 1. Инициализация системы
-        if not test_init_command(mask):
-             all_tests_passed = False
+        all_ok = True
+        for name, test in tests:
+            if not test():
+                print(f"\nFAILED: {name}")
+                all_ok = False
+                break
 
-        # 2. Проверка статуса
-        if all_tests_passed and not test_get_status_command():
-            all_tests_passed = False
-
-        # 3. Поворот диска с образцами к позиции забора (например, слот 5)
-        if all_tests_passed and not test_sample_rotate_command(5):
-            all_tests_passed = False
-
-        # 4. Забор образца дозатором
-        # (дозатор 1, источник - диск образцов (0x03), позиция 5, объем 10 мкл)
-        if all_tests_passed and not test_dispenser_aspirate_command(1, 0x03, 5, 10):
-            all_tests_passed = False
-        
-        # 5. Выдача образца в кювету
-        # (дозатор 1, назначение - реакционный диск (0x01), кювета 10, объем 10 мкл)
-        if all_tests_passed and not test_dispenser_dispense_command(1, 0x01, 10, 10):
-            all_tests_passed = False
-
-        # 6. Поворот ротора реагентов
-        # (ротор 1, слот 3)
-        if all_tests_passed and not test_reagent_rotate_command(1, 3):
-            all_tests_passed = False
-
-        # 7. Забор реагента дозатором (после поворота ротора)
-        # (дозатор 1, источник - ротор реагентов (0x02), позиция 3, объем 200 мкл)
-        if all_tests_passed and not test_dispenser_aspirate_command(1, 0x02, 3, 200):
-            all_tests_passed = False
-
-        # 8. Выдача реагента в кювету
-        # (дозатор 1, назначение - реакционный диск (0x01), кювета 10, объем 200 мкл)
-        if all_tests_passed and not test_dispenser_dispense_command(1, 0x01, 10, 200):
-            all_tests_passed = False
-            
-        # 9. Перемешивание содержимого кюветы
-        # (миксер 1, кювета 10, время 3000 мс, 2 цикла промывки)
-        if all_tests_passed and not test_mixer_mix_command(1, 10, 3000, 2):
-            all_tests_passed = False
-
-        # 10. Фотометрическое сканирование кюветы
-        # (кювета 10, маска длин волн 0x03)
-        if all_tests_passed and not test_photometer_scan_single_command(10, 0x03):
-            all_tests_passed = False
-
-        # --- ЗАПУСК ТЕСТОВОГО СЦЕНАРИЯ "ПРОМЫВКА СИСТЕМЫ" ---
-        print("\n" + "="*20 + " НАЧАЛО ТЕСТА: ПРОМЫВКА СИСТЕМЫ " + "="*20)
-
-        # 11. Полная промывка дозатора
-        # (дозатор 1, объем 1000 мкл, 5 циклов)
-        if all_tests_passed and not test_dispenser_wash_command(1, 1000, 5):
-            all_tests_passed = False
-
-        # 12. Заполнение моечной станции
-        # (объем 500 мкл, кювета 10)
-        if all_tests_passed and not test_wash_station_fill_command(500, 10):
-            all_tests_passed = False
-
-        # 13. Промывка моечной станции
-        # (3 цикла, кювета 10 - параметры из test_combined_commands)
-        if all_tests_passed and not test_wash_station_wash_command(3, 10):
-            all_tests_passed = False
-            
-        print("\n" + "="*20 + " ЗАВЕРШЕНИЕ ТЕСТА: ПРОМЫВКА СИСТЕМЫ " + "="*20)
-
-
-        print("\n" + "="*20 + " ЗАВЕРШЕНИЕ ТЕСТА: ЦИКЛ АНАЛИЗА ОБРАЗЦА " + "="*20)
-        if all_tests_passed:
-            print("\nНа данный момент все реализованные шаги цикла анализа пройдены успешно!")
-        else:
-            print("\nОШИБКА: Один из шагов цикла анализа образца провален!")
-
-    except serial.SerialException as e:
-        print(f"Ошибка: Не удалось открыть порт {SERIAL_PORT}. {e}")
-    except Exception as e:
-        print(f"Произошла непредвиденная ошибка: {e}")
+        print("\nPASS: all selected tests completed." if all_ok else "\nFAIL: selected test set failed.")
+        return 0 if all_ok else 1
+    except (RuntimeError, SerialException) as exc:
+        print(f"ERROR: cannot open serial port {args.serial}: {exc}")
+        return 2
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        return 130
     finally:
-        stop_listening_event.set()
-        if 'listener_thread' in locals() and listener_thread.is_alive():
-            listener_thread.join(timeout=2)
-        
-        if ser and ser.is_open:
-            ser.close()
-            print("Соединение закрыто.")
+        close_serial(listener_thread)
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

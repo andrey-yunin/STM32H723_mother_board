@@ -14,6 +14,8 @@
 #define APP_CAN_RX_QUEUE_LENGTH        20   // Raw CAN RX frames from task_can_handler
 #define APP_CAN_JOB_RX_QUEUE_LENGTH    20   // Routed executor responses for Host operations
 #define APP_CAN_SERVICE_RX_QUEUE_LENGTH 20  // Routed executor responses for service/recovery/diagnostics
+#define APP_CAN_SAFETY_RX_QUEUE_LENGTH 20   // Routed executor responses for safety operations
+#define APP_CAN_HOST_DIRECT_RX_QUEUE_LENGTH 20 // Routed executor responses for Host direct operations
 #define APP_CAN_TX_QUEUE_LENGTH        20   // Количество элементов в очереди CAN TX
 #define APP_LOG_QUEUE_LENGTH           30   // Количество элементов в очереди Логгера
 

@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "can_packer.h"
-#include "command_parser.h"
+#include "host_command_model.h"
 #include "recipe_store.h"
 
 typedef enum {

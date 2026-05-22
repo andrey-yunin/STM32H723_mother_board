@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "command_parser.h"
+#include "recipe_types.h"
 
 typedef struct {
     uint16_t command_code;

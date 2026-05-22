@@ -14,12 +14,16 @@
 
 typedef enum {
 	TX_OWNER_HOST_OPERATION = 0,
-	TX_OWNER_SERVICE_INTERNAL
+	TX_OWNER_SERVICE_INTERNAL,
+	TX_OWNER_SAFETY_OPERATION,
+	TX_OWNER_HOST_DIRECT_OPERATION
 } CanTxOwner_t;
 
 typedef enum {
 	CAN_RX_ROUTE_HOST_OPERATION = 0,
-	CAN_RX_ROUTE_SERVICE_INTERNAL
+	CAN_RX_ROUTE_SERVICE_INTERNAL,
+	CAN_RX_ROUTE_SAFETY_OPERATION,
+	CAN_RX_ROUTE_HOST_DIRECT_OPERATION
 } CanRxRoute_t;
 
 /*
@@ -64,8 +68,10 @@ void CanResponseRouter_CloseOperation(CanTxOwner_t owner, uint32_t operation_id)
 
 /*
  * Читает raw can_rx_queue_handle и раскладывает ответы в:
- * - can_job_rx_queue_handle: Host operations, включая HOST_RECIPE и HOST_DIRECT;
+ * - can_job_rx_queue_handle: Host recipe/job operations;
  * - can_service_rx_queue_handle: service/internal F001/F004/F007.
+ * - can_safety_rx_queue_handle: safety operations, включая 0x1010 EMERGENCY_STOP.
+ * - can_host_direct_rx_queue_handle: executor-backed direct Host commands.
  */
 void CanResponseRouter_Run(void);
 

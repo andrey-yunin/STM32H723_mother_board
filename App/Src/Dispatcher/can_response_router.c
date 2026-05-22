@@ -3,6 +3,17 @@
  *
  *  Created on: May 14, 2026
  *      Author: andrey
+ *
+ * CAN RX routing boundary:
+ * - вызов: task_jobs_monitor вызывает CanResponseRouter_Run() первым в polling loop;
+ * - вход: raw can_rx_queue_handle от task_can_handler/FDCAN ISR handoff;
+ * - выходы: can_job_rx_queue_handle, can_service_rx_queue_handle,
+ *   can_safety_rx_queue_handle, can_host_direct_rx_queue_handle;
+ * - context: ACK/NACK/DONE несут command code, DATA привязывается через
+ *   active route, зарегистрированный отправителем low-level команды.
+ *
+ * Router не выполняет retry, timeout, aggregation, Host response и recovery.
+ * Он только сохраняет/выдает context, чтобы owner-модули принимали policy.
  */
 
 #include "Dispatcher/can_response_router.h"
@@ -12,7 +23,7 @@
 #include "task.h"
 #include <string.h>
 
-#define ROUTER_TRACKED_ROUTES 8U
+#define ROUTER_TRACKED_ROUTES 16U
 #define ROUTER_BROADCAST_TEMPLATES 4U
 
 typedef struct {
@@ -73,9 +84,20 @@ static bool Router_IsServiceCommand(uint16_t command_code)
 
 static CanRxRoute_t Router_RouteForOwner(CanTxOwner_t owner)
 {
-	return (owner == TX_OWNER_SERVICE_INTERNAL)
-			? CAN_RX_ROUTE_SERVICE_INTERNAL
-			: CAN_RX_ROUTE_HOST_OPERATION;
+	switch (owner) {
+		case TX_OWNER_SERVICE_INTERNAL:
+			return CAN_RX_ROUTE_SERVICE_INTERNAL;
+
+		case TX_OWNER_SAFETY_OPERATION:
+			return CAN_RX_ROUTE_SAFETY_OPERATION;
+
+		case TX_OWNER_HOST_DIRECT_OPERATION:
+			return CAN_RX_ROUTE_HOST_DIRECT_OPERATION;
+
+		case TX_OWNER_HOST_OPERATION:
+		default:
+			return CAN_RX_ROUTE_HOST_OPERATION;
+	}
 }
 
 static CanTxOwner_t Router_OwnerForCommand(uint16_t command_code)
@@ -604,10 +626,16 @@ void CanResponseRouter_Run(void)
 		}
 		taskEXIT_CRITICAL();
 
-		QueueHandle_t target_queue =
-			(routed.route == CAN_RX_ROUTE_SERVICE_INTERNAL)
-				? can_service_rx_queue_handle
-				: can_job_rx_queue_handle;
+		QueueHandle_t target_queue = can_job_rx_queue_handle;
+		if (routed.route == CAN_RX_ROUTE_SERVICE_INTERNAL) {
+			target_queue = can_service_rx_queue_handle;
+		}
+		else if (routed.route == CAN_RX_ROUTE_SAFETY_OPERATION) {
+			target_queue = can_safety_rx_queue_handle;
+		}
+		else if (routed.route == CAN_RX_ROUTE_HOST_DIRECT_OPERATION) {
+			target_queue = can_host_direct_rx_queue_handle;
+		}
 
 		(void)xQueueSend(target_queue, &routed, 0);
 	}

@@ -9,7 +9,7 @@
 #define SRC_DISPATCHER_INC_RECIPE_STORE_H_
 
 #include <stdint.h>
-#include "command_parser.h" // Для доступа к RecipeID_t
+#include "recipe_types.h"
 
 // --- НОВОЕ ПЕРЕЧИСЛЕНИЕ --- 03.02.2026
 /**

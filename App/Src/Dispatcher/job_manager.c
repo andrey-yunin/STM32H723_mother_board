@@ -3,6 +3,16 @@
  *
  *  Created on: Dec 4, 2025
  *      Author: andrey
+ *
+ * Recipe runtime owner:
+ * - вызов start: host_recipe_operation после Host preflight;
+ * - polling: task_jobs_monitor вызывает JobManager_Run();
+ * - TX: recipe actions отправляются только через executor_command_tx;
+ * - RX: только can_job_rx_queue_handle через CanResponseRouter;
+ * - completion: сообщает HostRecipeOperation через callback.
+ *
+ * JobManager не отправляет финальный Host DONE и не переводит систему в READY.
+ * Эти действия принадлежат Host recipe operation boundary.
  */
 
 #include "Dispatcher/job_manager.h"
@@ -15,7 +25,6 @@
 #include "Dispatcher/service_manager.h"
 #include "shared_resources.h"
 #include "app_config.h"
-#include "task_dispatcher.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -59,6 +68,7 @@ typedef struct {
 // --- Внутренние переменные ---
 static JobContext_t g_active_jobs[MAX_CONCURRENT_JOBS];
 static uint32_t g_next_job_id = 1;
+static JobManagerCompletionCallback_t g_completion_callback = NULL;
 
 // --- Прототипы внутренних функций ---
 static JobContext_t* JobManager_FindFreeSlot(void);
@@ -67,7 +77,13 @@ static void JobManager_CompleteJob(
 		JobContext_t* job,
 		JobStatus_t final_status,
 		uint16_t host_status_code);
-static void JobManager_SignalSystemReady(void);
+static uint16_t JobManager_NormalizeHostCompletionStatus(
+		JobStatus_t final_status,
+		uint16_t host_status_code);
+static void JobManager_NotifyCompletion(
+		const JobContext_t* job,
+		JobStatus_t final_status,
+		uint16_t host_status_code);
 
 static void JobManager_ResetTransactions(JobContext_t* job);
 static bool JobManager_TickElapsed(uint32_t start_ms, uint32_t timeout_ms);
@@ -748,6 +764,11 @@ void JobManager_Init(void)
 	g_next_job_id = 1;
 }
 
+void JobManager_SetCompletionCallback(JobManagerCompletionCallback_t callback)
+{
+	g_completion_callback = callback;
+}
+
 /*
  * Создает новую Host recipe operation.
  * Parser уже проверил Host packet и заполнил UniversalCommand_t;
@@ -793,6 +814,32 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
 
     // Возвращаем сохраненный ID, так как job->job_id может быть уже равен 0
     return new_job_id;
+}
+
+void JobManager_AbortAll(uint16_t host_status_code)
+{
+	uint16_t final_status = (host_status_code != HOST_STATUS_OK)
+			? host_status_code
+			: HOST_ERR_GENERAL;
+
+	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
+		JobContext_t* job = &g_active_jobs[i];
+
+		if (job->status == JOB_STATUS_RUNNING) {
+			JobManager_CompleteJob(job, JOB_STATUS_ERROR, final_status);
+		}
+	}
+}
+
+bool JobManager_HasActiveJob(void)
+{
+	for (int i = 0; i < MAX_CONCURRENT_JOBS; i++) {
+		if (g_active_jobs[i].status == JOB_STATUS_RUNNING) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /*
@@ -1042,7 +1089,48 @@ static void JobManager_ExecuteStep(JobContext_t* job)
 
 
 /*
- * Завершает Host job и отправляет Host DONE.
+ * Нормализует финальный Host status для Host recipe boundary.
+ */
+static uint16_t JobManager_NormalizeHostCompletionStatus(
+		JobStatus_t final_status,
+		uint16_t host_status_code)
+{
+	if (final_status == JOB_STATUS_COMPLETED) {
+		return HOST_STATUS_OK;
+	}
+
+	if (host_status_code == HOST_STATUS_OK) {
+		return HOST_ERR_GENERAL;
+	}
+
+	return host_status_code;
+}
+
+/*
+ * Передает финальное событие Host recipe boundary.
+ */
+static void JobManager_NotifyCompletion(
+		const JobContext_t* job,
+		JobStatus_t final_status,
+		uint16_t host_status_code)
+{
+	if (job == NULL || g_completion_callback == NULL) {
+		return;
+	}
+
+	JobManagerCompletionEvent_t event = {
+		.job_id = job->job_id,
+		.host_command_code = job->initial_cmd.command_code,
+		.recipe_id = job->initial_recipe_id,
+		.host_status_code = host_status_code,
+		.completed = (final_status == JOB_STATUS_COMPLETED)
+	};
+
+	g_completion_callback(&event);
+}
+
+/*
+ * Завершает Host job и передает финальное событие Host recipe boundary.
  * Executor DONE не должен попадать сюда напрямую: сначала он должен закрыть
  * соответствующую executor transaction или внутренний action.
  */
@@ -1056,32 +1144,12 @@ static void JobManager_CompleteJob(
     snprintf(final_msg, sizeof(final_msg), "INFO: Job #%lu finished with status %d.", (unsigned long)job->job_id, final_status);
     Dispatcher_SendUsbResponse(final_msg);
 
-    // Отправляем бинарный DONE-ответ.
-    uint16_t done_status_code = host_status_code;
-    if (final_status == JOB_STATUS_COMPLETED) {
-		done_status_code = HOST_STATUS_OK;
-	}
-	else if (done_status_code == HOST_STATUS_OK) {
-		done_status_code = HOST_ERR_GENERAL;
-    }
-    Dispatcher_SendDone(job->initial_cmd.command_code, done_status_code);
-
-
-    if (job->initial_recipe_id == RECIPE_INITIALIZE_SYSTEM && final_status == JOB_STATUS_COMPLETED) {
-         JobManager_SignalSystemReady();
-    }
+    uint16_t done_status_code =
+            JobManager_NormalizeHostCompletionStatus(final_status, host_status_code);
+    JobManager_NotifyCompletion(job, final_status, done_status_code);
 
     job->status = JOB_STATUS_IDLE;
     JobManager_ResetTransactions(job);
 
     job->job_id = 0;
-}
-
-/*
- * Переводит глобальное состояние системы в READY после успешного INIT recipe.
- * Это Host/system-level состояние Дирижера, не low-level executor transaction.
- */
-static void JobManager_SignalSystemReady(void) {
-    Dispatcher_SendUsbResponse("DEBUG: Signaling system READY.");
-	SetSystemReady();
 }

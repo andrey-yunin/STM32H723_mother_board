@@ -13,12 +13,17 @@
 #include "app_init_checker.h"
 #include "Dispatcher/command_parser.h"
 #include "Dispatcher/dispatcher_io.h"
+#include "Dispatcher/host_command_model.h"
 #include "Dispatcher/host_direct_command_registry.h"
+#include "Dispatcher/host_direct_operation.h"
 #include "Dispatcher/host_recipe_operation.h"
 #include "Dispatcher/job_manager.h"
+#include "Dispatcher/safety_operation.h"
 #include "task_watchdog.h"
 #include "Dispatcher/can_response_router.h"
 #include <stdbool.h>
+
+#define HOST_CMD_INIT                  0x1002U
 
 
 /**
@@ -31,6 +36,14 @@ static uint16_t g_system_error_code = HOST_ERR_OK;
 
 static bool Dispatcher_IsCommandAllowedInErrorState(uint16_t command_code)
 {
+	if (command_code == HOST_CMD_EMERGENCY_STOP) {
+		return true;
+	}
+
+	if (command_code == HOST_CMD_INIT && SafetyOperation_IsLatched()) {
+		return true;
+	}
+
 	return command_code == HOST_CMD_GET_STATUS ||
 			command_code == HOST_CMD_GET_VERSION ||
 			command_code == HOST_CMD_GET_DATETIME;
@@ -65,8 +78,11 @@ void app_start_task_dispatcher(void *argument)
 			// Router должен быть очищен до приема service-ответов F001/F004/F007.
 
 			CanResponseRouter_Init();
+			SafetyOperation_Init();
+			HostDirectOperation_Init();
 			ServiceManager_Init();
 			JobManager_Init();
+			HostRecipeOperation_Init();
 
 
 			for (uint8_t i = 0; i < 5; i++) {

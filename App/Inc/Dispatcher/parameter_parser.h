@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "command_parser.h" // Для доступа к UniversalCommand_t
+#include "host_command_model.h"
 
  /**
   * @brief Разбирает сырые байты параметров команды в структурированные данные.

@@ -2,12 +2,24 @@
  * host_recipe_operation.c
  *
  * Host recipe operation start boundary.
+ *
+ * Owner boundary:
+ * - вызов: command_parser для Host recipe-команд;
+ * - preflight: service inventory check перед INIT/recipe start;
+ * - runtime: JobManager выполняет recipe steps и executor transactions;
+ * - completion: JobManager возвращает JobManagerCompletionEvent_t сюда;
+ * - Host lifecycle: этот модуль отправляет финальный DONE для recipe-команды.
+ *
+ * READY-after-INIT и emergency latch clear находятся здесь, потому что это
+ * Host/system lifecycle, а не low-level recipe runtime responsibility.
  */
 
 #include "host_recipe_operation.h"
 #include "dispatcher_io.h"
 #include "job_manager.h"
+#include "safety_operation.h"
 #include "service_manager.h"
+#include "task_dispatcher.h"
 #include <stddef.h>
 #include <stdbool.h>
 
@@ -30,6 +42,27 @@ static bool HostRecipeOperation_CheckPreflight(const UniversalCommand_t* parsed_
     }
 
     return true;
+}
+
+static void HostRecipeOperation_HandleJobCompleted(
+        const JobManagerCompletionEvent_t* event)
+{
+    if (event == NULL) {
+        return;
+    }
+
+    Dispatcher_SendDone(event->host_command_code, event->host_status_code);
+
+    if (event->recipe_id == RECIPE_INITIALIZE_SYSTEM && event->completed) {
+        Dispatcher_SendUsbResponse("DEBUG: Signaling system READY.");
+        SafetyOperation_ClearLatch();
+        SetSystemReady();
+    }
+}
+
+void HostRecipeOperation_Init(void)
+{
+    JobManager_SetCompletionCallback(HostRecipeOperation_HandleJobCompleted);
 }
 
 uint32_t HostRecipeOperation_Start(const UniversalCommand_t* parsed_cmd)

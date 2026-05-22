@@ -1,5 +1,6 @@
 #include "command_parser.h"
 #include "dispatcher_io.h"
+#include "host_command_model.h"
 #include "host_recipe_operation.h"
 #include "parameter_parser.h"
 #include <string.h>

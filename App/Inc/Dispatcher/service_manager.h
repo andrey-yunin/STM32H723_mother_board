@@ -59,6 +59,17 @@ bool ServiceManager_CheckInventory(uint8_t modules_mask);
  */
 bool ServiceManager_IsNodeOnline(uint8_t node_id);
 
+/**
+ * @brief Проверяет, есть ли активная service/discovery операция,
+ *        которая может породить DATA без command_code для указанного узла.
+ */
+bool ServiceManager_HasActiveOperationForNode(uint8_t node_id);
+
+/**
+ * @brief Возвращает channel_count для online/READY узла.
+ */
+bool ServiceManager_GetNodeChannelCount(uint8_t node_id, uint8_t* out_channel_count);
+
 
 void ServiceManager_Run(void);
 

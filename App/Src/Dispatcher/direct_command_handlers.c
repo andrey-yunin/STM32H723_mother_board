@@ -7,6 +7,8 @@
 
 #include "direct_command_handlers.h"
 #include "dispatcher_io.h"
+#include "host_direct_operation.h"
+#include "safety_operation.h"
 #include "task_dispatcher.h"
 
 #define CONDUCTOR_FW_VERSION_MAJOR      1U
@@ -148,34 +150,21 @@ void handle_emergency_stop(uint16_t cmd_code, const uint8_t* params, uint16_t le
 	(void)params;
 	(void)len;
 
-	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
-	Dispatcher_SendUsbResponse("ERROR: EMERGENCY_STOP requires safety operation path.");
+	SafetyOperation_Start(cmd_code);
 }
 
 void handle_thermo_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	(void)params;
-	(void)len;
-
-	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
-	Dispatcher_SendUsbResponse("ERROR: THERMO_GET_TEMP is not connected to HOST_DIRECT yet.");
+	HostDirectOperation_StartThermoGetTemp(cmd_code, params, len);
 }
 
 
 void handle_sensor_get_all_temps(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	(void)params;
-	(void)len;
-
-	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
-	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_ALL_TEMPS is not connected to HOST_DIRECT yet.");
+	HostDirectOperation_StartSensorGetAllTemps(cmd_code, params, len);
 }
 
 void handle_sensor_get_temp(uint16_t cmd_code, const uint8_t* params, uint16_t len)
 {
-	(void)params;
-	(void)len;
-
-	Dispatcher_SendError(cmd_code, HOST_ERR_NOT_SUPPORTED);
-	Dispatcher_SendUsbResponse("ERROR: SENSOR_GET_TEMP is not connected to HOST_DIRECT yet.");
+	HostDirectOperation_StartSensorGetTemp(cmd_code, params, len);
 }

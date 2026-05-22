@@ -20,6 +20,8 @@ extern QueueHandle_t usb_tx_queue_handle;
 extern QueueHandle_t can_rx_queue_handle;
 extern QueueHandle_t can_job_rx_queue_handle;
 extern QueueHandle_t can_service_rx_queue_handle;
+extern QueueHandle_t can_safety_rx_queue_handle;
+extern QueueHandle_t can_host_direct_rx_queue_handle;
 extern QueueHandle_t can_tx_queue_handle;
 extern QueueHandle_t log_queue_handle;
 

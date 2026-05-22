@@ -60,6 +60,8 @@
 
 FDCAN_HandleTypeDef hfdcan1;
 
+IWDG_HandleTypeDef hiwdg1;
+
 /* Definitions for task_can_handle */
 osThreadId_t task_can_handleHandle;
 const osThreadAttr_t task_can_handle_attributes = {
@@ -114,6 +116,8 @@ QueueHandle_t usb_tx_queue_handle;
 QueueHandle_t can_rx_queue_handle;
 QueueHandle_t can_job_rx_queue_handle;
 QueueHandle_t can_service_rx_queue_handle;
+QueueHandle_t can_safety_rx_queue_handle;
+QueueHandle_t can_host_direct_rx_queue_handle;
 QueueHandle_t can_tx_queue_handle;
 QueueHandle_t log_queue_handle;
 
@@ -127,6 +131,7 @@ void SystemClock_Config(void);
 static void MPU_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_FDCAN1_Init(void);
+static void MX_IWDG1_Init(void);
 void start_task_can_handler(void *argument);
 void start_task_usb_handler(void *argument);
 void start_task_dispatcher(void *argument);
@@ -163,6 +168,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  AppSafety_CaptureResetCause();
 
   /* USER CODE END Init */
 
@@ -176,6 +182,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_FDCAN1_Init();
+  MX_IWDG1_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -214,6 +221,8 @@ int main(void)
 can_rx_queue_handle = xQueueCreate(APP_CAN_RX_QUEUE_LENGTH, sizeof(CAN_Message_t));
 can_job_rx_queue_handle = xQueueCreate(APP_CAN_JOB_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
 can_service_rx_queue_handle = xQueueCreate(APP_CAN_SERVICE_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
+can_safety_rx_queue_handle = xQueueCreate(APP_CAN_SAFETY_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
+can_host_direct_rx_queue_handle = xQueueCreate(APP_CAN_HOST_DIRECT_RX_QUEUE_LENGTH, sizeof(CanRoutedResponse_t));
 can_tx_queue_handle = xQueueCreate(APP_CAN_TX_QUEUE_LENGTH, sizeof(CAN_Message_t));
 
 
@@ -294,9 +303,11 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSI
+                              |RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = 64;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
@@ -404,6 +415,35 @@ static void MX_FDCAN1_Init(void)
   }
 
   /* USER CODE END FDCAN1_Init 2 */
+
+}
+
+/**
+  * @brief IWDG1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG1_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG1_Init 0 */
+
+  /* USER CODE END IWDG1_Init 0 */
+
+  /* USER CODE BEGIN IWDG1_Init 1 */
+
+  /* USER CODE END IWDG1_Init 1 */
+  hiwdg1.Instance = IWDG1;
+  hiwdg1.Init.Prescaler = IWDG_PRESCALER_256;
+  hiwdg1.Init.Window = 4095;
+  hiwdg1.Init.Reload = 999;
+  if (HAL_IWDG_Init(&hiwdg1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG1_Init 2 */
+
+  /* USER CODE END IWDG1_Init 2 */
 
 }
 
@@ -527,6 +567,7 @@ void start_task_dispatcher(void *argument)
 void start_task_watchdog(void *argument)
 {
   /* USER CODE BEGIN start_task_watchdog */
+  app_start_task_watchdog(argument);
   /* Infinite loop */
   for(;;)
   {
