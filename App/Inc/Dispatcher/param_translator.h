@@ -15,8 +15,12 @@
 // Эти значения аппаратно-специфичны и должны быть уточнены на основе фактических спецификаций устройства.
 // В конечном итоге они могут быть перемещены в выделенный файл device_config.h или загружены динамически.
 #define PT_REACTION_DISK_STEPS_PER_CUVETTE_UNIT 100 // Пример: 100 шагов для перемещения от одной кюветы к следующей
-#define PT_REACTION_DISK_MAX_CUVETTE            40  // Пример: Максимум 40 кювет на реакционном диске
+#define PT_REACTION_DISK_MAX_CUVETTE            81  // Пример: Максимум 81 кювет на реакционном диске
 #define PT_REACTION_DISK_HOME_OFFSET_STEPS      50  // Example: Offset from physical home to cuvette 1 position
+
+// Первая Host-нумеруемая кювета реакционного диска.
+// SCAN_ALL использует диапазон FIRST..MAX включительно.
+#define PT_REACTION_DISK_FIRST_CUVETTE         1U
 
 
 // --- Configuration Constants (example placeholders for pumps) ---

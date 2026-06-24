@@ -51,6 +51,7 @@
 
 	 // --- Смысловые параметры фотометра ---
 	 PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK,
+	 PARAM_SOURCE_PHOTOMETER_CALIBRATION_TYPE,
 
 
 	 // Добавьте другие источники по мере необходимости
@@ -68,9 +69,11 @@
 	 ACTION_RUN_PUMP_DURATION, // Recipe dosing: finite Fluidics command
      ACTION_START_PUMP,      // Включить насос Service/manual only
      ACTION_STOP_PUMP,       // Выключить насос // Service/manual/emergency only
-     ACTION_WAIT_MS,         // Подождать N миллисекунд
-     ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
+	 ACTION_WAIT_MS,         // Подождать N миллисекунд
+	 ACTION_HOME_MOTOR,      // Искать "домашнюю" позицию для мотора
 	 ACTION_PERFORM_SCAN, // <-- НОВОЕ ДЕЙСТВИЕ: Выполнить сканирование фотометром added 16/02/2026
+	 ACTION_PHOTOMETER_CALIBRATE,
+	 ACTION_PHOTOMETER_GET_WAVELENGTHS,
      // ... Другие будущие действия ...
  } ActionType_t;
 
@@ -114,14 +117,19 @@
              ParamSource_t speed_source;    // NEW!
          } home_motor;
 
-          // <-- НОВАЯ СТРУКТУРА ДЛЯ ФОТОМЕТРА --> added 16/02/2026
-          // Параметры для ACTION_PERFORM_SCAN
-          struct {
-        	  uint8_t photometer_id;         // ID фотометра (статический, для явности)
-        	  ParamSource_t photometer_id_source;
-        	  uint8_t wavelength_mask;       // Маска длин волн
-        	  ParamSource_t wavelength_mask_source;
-        	  } perform_scan;
+	         // Параметры для ACTION_PERFORM_SCAN
+	         struct {
+	             uint8_t wavelength_mask;       // Host-level маска длин волн
+	             ParamSource_t wavelength_mask_source;
+	         } perform_scan;
+
+	         // Параметры для ACTION_PHOTOMETER_CALIBRATE
+	         struct {
+	             uint8_t calibration_type;      // 0=air, 1=water
+	             ParamSource_t calibration_type_source;
+	             uint8_t wavelength_mask;       // Host-level маска длин волн
+	             ParamSource_t wavelength_mask_source;
+	         } photometer_calibrate;
 
            struct {
         		uint8_t pump_id;

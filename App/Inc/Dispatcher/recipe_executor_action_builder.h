@@ -33,12 +33,21 @@ typedef struct {
     RecipeID_t recipe_id;
     const UniversalCommand_t* initial_cmd;
     uint32_t current_step_timeout_ms;
+
+    /*
+     * Runtime-cursor для Host 0x6000 PHOTOMETER_SCAN_ALL.
+     * Host-команда не содержит cuvette, поэтому текущую кювету задает JobManager.
+     */
+    bool photometer_scan_all_active;
+    uint16_t photometer_scan_all_current_cuvette;
 } RecipeExecutorActionContext_t;
 
 bool RecipeExecutorActionBuilder_Build(
         const RecipeExecutorActionContext_t* ctx,
         const AtomicAction_t* atomic_action,
-        RecipeExecutorAction_t* out_action,
+        RecipeExecutorAction_t* out_actions,
+        uint8_t max_actions,
+        uint8_t* out_count,
         char* error_msg,
         size_t error_msg_len);
 

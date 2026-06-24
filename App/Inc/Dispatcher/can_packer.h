@@ -8,8 +8,8 @@
  *
  * Ключевые принципы:
  * 1. Строгий DLC=8 для всех команд (упрощение фильтрации на bxCAN).
- * 2. Унифицированный Payload: [0-1] Код, [2] Канал, [3-6] Параметр, [7] Резерв.
- * 3. Физическая адресация: переход на NodeID (0x20, 0x30, 0x40) и 0-based индексы.
+ * 2. Унифицированный Payload: [0-1] Код, [2] Канал/ресурс, [3-6] Параметр, [7] Резерв.
+ * 3. Физическая адресация: переход на NodeID (0x20, 0x30, 0x40, 0x50) и 0-based индексы.
  *
  *  Created on: Dec 4, 2025 (Updated: Apr 9, 2026)
  *      Author: andrey (Gemini CLI)
@@ -45,7 +45,7 @@ typedef struct {
 	bool command_code_valid;  // true для ACK/NACK/DONE, false для DATA без cmd
 	uint8_t data_info;        // byte[1] DATA frame: sequence/info
 	uint8_t  msg_type;      // Тип из CAN ID: ACK (1), NACK (2), DATA_DONE_LOG (3)
-    uint8_t  source_addr;   // NodeID отправителя (0x20, 0x30, 0x40)
+    uint8_t  source_addr;   // NodeID отправителя (0x20, 0x30, 0x40, 0x50)
     uint16_t command_code;  // Код команды (из байт 0-1 или 1-2 payload)
     uint16_t error_code;    // Код ошибки NACK (0 = OK)
     uint8_t  sub_type;      // Подтип для типа 3: DONE (0x01), DATA (0x02), LOG (0x03)
@@ -83,11 +83,12 @@ typedef struct {
 #define CAN_SUB_TYPE_LOG            0x03 // Текстовое сообщение для отладки
 
 // --- Сетевая топология (NodeID, биты 23-8 ID) ---
-#define CAN_ADDR_BROADCAST      0x00    // Широковещательный адрес
-#define CAN_ADDR_CONDUCTOR      0x10    // Адрес Дирижера (Master)
-#define CAN_ADDR_MOTOR_BOARD    0x20    // Плата Motion (Шаговые двигатели)
-#define CAN_ADDR_PUMP_BOARD     0x30    // Плата Fluidic (Насосы и Клапаны)
-#define CAN_ADDR_THERMO_BOARD   0x40    // Плата Thermo (Датчики температуры)
+#define CAN_ADDR_BROADCAST        0x00    // Широковещательный адрес
+#define CAN_ADDR_CONDUCTOR        0x10    // Адрес Дирижера (Master)
+#define CAN_ADDR_MOTOR_BOARD      0x20    // Плата Motion (Шаговые двигатели)
+#define CAN_ADDR_PUMP_BOARD       0x30    // Плата Fluidic (Насосы и Клапаны)
+#define CAN_ADDR_THERMO_BOARD     0x40    // Плата Thermo (Датчики температуры)
+#define CAN_ADDR_PHOTOMETER_BOARD 0x50    // Плата Photometer Executor
 
 
 // ============================================================================
@@ -108,11 +109,30 @@ typedef struct {
 #define CAN_CMD_VALVE_OPEN              0x0204 // Открыть клапан
 #define CAN_CMD_VALVE_CLOSE             0x0205 // Закрыть клапан
 
-// --- Группа 3: Thermo/Sensors (0x90xx) ---
+// --- Группа 3: Photometer (0x04xx) ---
+// Low-level domain commands Conductor -> Photometer Executor.
+// Host-команды 0x6000/0x6100/0x6200/0x6300 здесь не определяются.
+#define CAN_CMD_PHOTOMETER_SCAN             0x0401 // Измерение одного wavelength-channel
+#define CAN_CMD_PHOTOMETER_CALIBRATE        0x0402 // Калибровка одного wavelength-channel
+#define CAN_CMD_PHOTOMETER_GET_WAVELENGTH   0x0403 // Read-only длина волны одного channel
+
+// --- Photometer wavelength channels: byte 2 low-level command payload ---
+#define CAN_PHOTOMETER_CHANNEL_COUNT        8U
+#define CAN_PHOTOMETER_CHANNEL_340          0U
+#define CAN_PHOTOMETER_CHANNEL_405          1U
+#define CAN_PHOTOMETER_CHANNEL_450          2U
+#define CAN_PHOTOMETER_CHANNEL_510          3U
+#define CAN_PHOTOMETER_CHANNEL_546          4U
+#define CAN_PHOTOMETER_CHANNEL_578          5U
+#define CAN_PHOTOMETER_CHANNEL_630          6U
+#define CAN_PHOTOMETER_CHANNEL_670          7U
+
+
+// --- Группа 4: Thermo/Sensors (0x90xx) ---
 #define CAN_CMD_THERMO_GET_ALL          0x9010 // Запрос данных со всех датчиков платы
 #define CAN_CMD_THERMO_GET_TEMP         0x9011 // Запрос температуры датчика
 
-// --- Группа 4: Service & Maintenance (0xFxxx) ---
+// --- Группа 5: Service & Maintenance (0xFxxx) ---
 #define CAN_CMD_SRV_GET_INFO            0xF001 // Запрос версии и типа платы
 #define CAN_CMD_SRV_REBOOT              0xF002 // Программная перезагрузка
 #define CAN_CMD_SRV_COMMIT              0xF003 // Сохранение RAM-настроек во Flash
@@ -131,6 +151,7 @@ typedef struct {
 // ---           РЕЕСТР ОШИБОК NACK (Error Registry - Stage 1.4)            ---
 // ---        Синхронизировано с экосистемой DDS-240 (Директива 2.0)         ---
 // ============================================================================
+// Common executor NACK namespace: одинаковые значения для всех плат.
 #define CAN_NACK_OK                     0x0000 // Нет ошибки
 #define CAN_NACK_ERR_UNKNOWN_CMD        0x0001 // Неизвестная команда
 #define CAN_NACK_ERR_INVALID_DEVICE_ID  0x0002 // Неверный device/channel id
@@ -141,10 +162,29 @@ typedef struct {
 #define CAN_NACK_ERR_INVALID_PARAM      0x0006 // Некорректный параметр/DLC
 #define CAN_NACK_ERR_BUSY               CAN_NACK_ERR_DEVICE_BUSY
 
-// Domain-specific aliases. Numeric value is interpreted with source NodeID/command context.
-#define CAN_NACK_ERR_THERMO_SENSOR_FAILURE 0x0003
-#define CAN_NACK_ERR_THERMO_BUSY           0x0007
+// Domain executor NACK namespaces: значения глобально уникальны.
+#define CAN_NACK_DOMAIN_MOTION_BASE     0xE200U
+#define CAN_NACK_DOMAIN_FLUIDICS_BASE   0xE300U
+#define CAN_NACK_DOMAIN_THERMO_BASE     0xE400U
+#define CAN_NACK_DOMAIN_PHOTOMETER_BASE 0xE500U
 
+// --- Thermo domain NACK extension (Thermo Executor -> Conductor) ---
+#define CAN_ERR_THERMO_SENSOR_FAILURE       0xE400U
+#define CAN_NACK_ERR_THERMO_SENSOR_FAILURE  CAN_ERR_THERMO_SENSOR_FAILURE
+
+// --- Photometer domain NACK extension (Photometer Executor -> Conductor) ---
+#define CAN_ERR_PHOT_CALIBRATION_REQUIRED   0xE500U
+#define CAN_ERR_PHOT_ADC_OVER_RANGE         0xE501U
+#define CAN_ERR_PHOT_ADC_UNDER_RANGE        0xE502U
+#define CAN_ERR_PHOT_GAIN_LIMIT             0xE503U
+#define CAN_ERR_PHOT_BAD_REFERENCE          0xE504U
+#define CAN_ERR_PHOT_LAMP_NOT_STABLE        0xE505U
+#define CAN_ERR_PHOT_ADC_ERROR              0xE506U
+#define CAN_ERR_PHOT_MCP_ERROR              0xE507U
+#define CAN_ERR_PHOT_SPI_ERROR              0xE508U
+#define CAN_ERR_PHOT_CALIBRATION_FAILED     0xE509U
+#define CAN_ERR_PHOT_UNSUPPORTED_WAVELENGTH 0xE50AU
+#define CAN_ERR_PHOT_NOT_READY              0xE50BU
 
 
 // ============================================================================
@@ -191,6 +231,11 @@ void Packer_CreateValveCloseMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
 // --- Секция Thermo (Датчики 0-7) ---
 void Packer_CreateGetTempMsg(uint8_t ch_idx, CAN_Message_t* out_msg);
 void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg);
+
+// --- Секция Photometer (wavelength channels 0-7) ---
+void Packer_CreatePhotometerScanMsg(uint8_t wavelength_channel, CAN_Message_t* out_msg);
+void Packer_CreatePhotometerCalibrateMsg(uint8_t wavelength_channel, uint8_t calibration_type, CAN_Message_t* out_msg);
+void Packer_CreatePhotometerGetWavelengthMsg(uint8_t wavelength_channel, CAN_Message_t* out_msg);
 
 // --- Секция Service (Сервисные команды) ---
 void Packer_CreateGetInfoMsg(uint8_t dst_addr, CAN_Message_t* out_msg);

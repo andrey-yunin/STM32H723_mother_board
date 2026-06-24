@@ -25,6 +25,7 @@
 #include "Dispatcher/service_manager.h"
 #include "shared_resources.h"
 #include "app_config.h"
+#include "Dispatcher/param_translator.h"
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -52,6 +53,31 @@ typedef struct {
 } JobInternalAction_t;
 
 typedef struct {
+    bool active;
+    uint8_t expected_mask;
+    uint8_t received_mask;
+    uint8_t done_mask;
+    uint16_t values[CAN_PHOTOMETER_CHANNEL_COUNT];
+} JobPhotometerScanContext_t;
+
+typedef struct {
+    bool active;
+    uint8_t expected_mask;
+    uint8_t received_mask;
+    uint8_t done_mask;
+    uint16_t wavelength_nm[CAN_PHOTOMETER_CHANNEL_COUNT];
+} JobPhotometerWavelengthContext_t;
+
+
+typedef struct {
+      bool active;
+      uint16_t first_cuvette;
+      uint16_t current_cuvette;
+      uint16_t last_cuvette;
+} JobPhotometerScanAllContext_t;
+
+
+typedef struct {
     uint32_t job_id;
     JobStatus_t status;
     RecipeID_t initial_recipe_id;
@@ -63,6 +89,9 @@ typedef struct {
     ExecutorTransactionTable_t transactions;
     UniversalCommand_t initial_cmd;
     JobInternalAction_t internal_actions[JOB_MAX_INTERNAL_ACTIONS];
+    JobPhotometerScanContext_t photometer_scan;
+    JobPhotometerWavelengthContext_t photometer_wavelengths;
+    JobPhotometerScanAllContext_t photometer_scan_all;
 } JobContext_t;
 
 // --- Внутренние переменные ---
@@ -115,9 +144,33 @@ static JobInternalAction_t* JobManager_RegisterInternalAction(
         JobInternalActionType_t type,
         uint32_t duration_ms);
 static bool JobManager_CheckInternalActions(JobContext_t* job);
+static void JobManager_ResetPhotometerScan(JobContext_t* job);
+static void JobManager_PreparePhotometerScan(JobContext_t* job, uint8_t wavelength_mask);
+static bool JobManager_HandlePhotometerScanData(
+        JobContext_t* job,
+        const CanRoutedResponse_t* routed,
+        const ExecutorTransactionUpdate_t* update);
+static bool JobManager_HandlePhotometerScanDone(
+        JobContext_t* job,
+        const ExecutorTransactionUpdate_t* update);
+static void JobManager_ResetPhotometerWavelengths(JobContext_t* job);
+static void JobManager_PreparePhotometerWavelengths(JobContext_t* job);
+static bool JobManager_HandlePhotometerWavelengthData(
+        JobContext_t* job,
+        const CanRoutedResponse_t* routed,
+        const ExecutorTransactionUpdate_t* update);
+static bool JobManager_HandlePhotometerWavelengthDone(
+        JobContext_t* job,
+        const ExecutorTransactionUpdate_t* update);
 static ExecutorTransactionResponsePolicy_t JobManager_ResponsePolicyFromExecutorAction(ExecutorActionResponsePolicy_t policy);
 static uint16_t JobManager_MapExecutorNackToHostError(const ExecutorTransactionUpdate_t* update);
 static uint16_t JobManager_MapExecutorTxStatusToHostError(ExecutorCommandTxStatus_t status);
+
+static void JobManager_ResetPhotometerScanAll(JobContext_t* job);
+static bool JobManager_PreparePhotometerScanAll(JobContext_t* job);
+static bool JobManager_AdvancePhotometerScanAll(JobContext_t* job);
+static uint16_t JobManager_GetPhotometerResultCuvette(const JobContext_t* job);
+
 
 /*
  * Расширяет timeout текущего шага recipe до требуемого значения.
@@ -162,18 +215,37 @@ static uint16_t JobManager_MapExecutorNackToHostError(const ExecutorTransactionU
 			return HOST_ERR_INVALID_PARAM;
 
 		case CAN_NACK_ERR_DEVICE_BUSY:
-			if (update->node_id == CAN_ADDR_THERMO_BOARD &&
-					(update->low_command_code == CAN_CMD_THERMO_GET_TEMP ||
-							update->low_command_code == CAN_CMD_THERMO_GET_ALL)) {
-				return HOST_ERR_HARDWARE;
-			}
 			return HOST_ERR_BUSY;
 
 		case CAN_NACK_ERR_FLASH_WRITE:
+		case CAN_NACK_ERR_THERMO_SENSOR_FAILURE:
 			return HOST_ERR_HARDWARE;
 
-		case CAN_NACK_ERR_THERMO_BUSY:
-			return HOST_ERR_BUSY;
+		case CAN_ERR_PHOT_CALIBRATION_REQUIRED:
+		case CAN_ERR_PHOT_GAIN_LIMIT:
+		case CAN_ERR_PHOT_BAD_REFERENCE:
+		case CAN_ERR_PHOT_CALIBRATION_FAILED:
+			return HOST_ERR_PHOT_CALIBRATION;
+
+		case CAN_ERR_PHOT_ADC_OVER_RANGE:
+			return HOST_ERR_PHOT_OVERFLOW;
+
+		case CAN_ERR_PHOT_ADC_UNDER_RANGE:
+			return HOST_ERR_PHOT_UNDERFLOW;
+
+		case CAN_ERR_PHOT_LAMP_NOT_STABLE:
+			return HOST_ERR_PHOT_LAMP_WEAK;
+
+		case CAN_ERR_PHOT_ADC_ERROR:
+			return HOST_ERR_PHOT_ADC;
+
+		case CAN_ERR_PHOT_UNSUPPORTED_WAVELENGTH:
+			return HOST_ERR_PHOT_WAVELENGTH;
+
+		case CAN_ERR_PHOT_MCP_ERROR:
+		case CAN_ERR_PHOT_SPI_ERROR:
+		case CAN_ERR_PHOT_NOT_READY:
+			return HOST_ERR_PHOT_GENERAL;
 
 		default:
 			return HOST_ERR_GENERAL;
@@ -206,16 +278,31 @@ static bool JobManager_BuildAndStageExecutorAction(
         .job_id = job->job_id,
         .recipe_id = job->initial_recipe_id,
         .initial_cmd = &job->initial_cmd,
-        .current_step_timeout_ms = job->step_timeout_ms
+        .current_step_timeout_ms = job->step_timeout_ms,
+		.photometer_scan_all_active = job->photometer_scan_all.active,
+		.photometer_scan_all_current_cuvette = job->photometer_scan_all.current_cuvette
+
     };
-    RecipeExecutorAction_t executor_action;
+    RecipeExecutorAction_t executor_actions[JOB_MAX_EXECUTOR_TRANSACTIONS];
+    uint8_t executor_action_count = 0U;
     char info_msg[APP_USB_RESP_MAX_LEN];
     info_msg[0] = '\0';
+
+    if (*staged_count >= JOB_MAX_EXECUTOR_TRANSACTIONS) {
+        snprintf(info_msg, sizeof(info_msg),
+                "ERROR: Job #%lu: Executor action staging buffer is full.",
+                (unsigned long)job->job_id);
+        Dispatcher_SendUsbResponse(info_msg);
+        JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+        return false;
+    }
 
     if (!RecipeExecutorActionBuilder_Build(
             &action_ctx,
             action,
-            &executor_action,
+            executor_actions,
+            (uint8_t)(JOB_MAX_EXECUTOR_TRANSACTIONS - *staged_count),
+            &executor_action_count,
             info_msg,
             sizeof(info_msg))) {
         if (info_msg[0] == '\0') {
@@ -229,60 +316,122 @@ static bool JobManager_BuildAndStageExecutorAction(
         return false;
     }
 
-    if (!executor_action.command_required) {
+    if (action->action == ACTION_PERFORM_SCAN && executor_action_count > 0U) {
+        JobManager_PreparePhotometerScan(
+                job,
+                (uint8_t)executor_actions[0].debug_value);
+    }
+
+    if (action->action == ACTION_PHOTOMETER_GET_WAVELENGTHS &&
+            executor_action_count > 0U) {
+        JobManager_PreparePhotometerWavelengths(job);
+    }
+
+    uint8_t command_count = 0U;
+
+    for (uint8_t i = 0U; i < executor_action_count; i++) {
+        RecipeExecutorAction_t* executor_action = &executor_actions[i];
+
+        if (!executor_action->command_required) {
+            continue;
+        }
+
+        JobManager_ExtendStepTimeout(job, executor_action->operation_timeout_ms);
+
+        switch (action->action) {
+            case ACTION_ROTATE_MOTOR:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued ROTATE_MOTOR (Phys:%u:%u, Steps:%ld, Speed:%u)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (long)executor_action->debug_signed_value,
+                        (unsigned int)executor_action->debug_value);
+                break;
+
+            case ACTION_HOME_MOTOR:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued HOME_MOTOR (Phys:%u:%u, Speed:%u)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (unsigned int)executor_action->debug_value);
+                break;
+
+            case ACTION_RUN_PUMP_DURATION:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued RUN_PUMP_DURATION (Phys:%u:%u, Duration:%lu)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (unsigned long)executor_action->debug_value);
+                break;
+
+            case ACTION_PERFORM_SCAN:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued PHOTOMETER_SCAN (Phys:%u:%u, Mask:0x%02X, Channel:%ld)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (unsigned int)executor_action->debug_value,
+                        (long)executor_action->debug_signed_value);
+                break;
+
+            case ACTION_PHOTOMETER_CALIBRATE:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued PHOTOMETER_CALIBRATE (Phys:%u:%u, Type:%u, Channel:%ld)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (unsigned int)executor_action->debug_value,
+                        (long)executor_action->debug_signed_value);
+                break;
+
+            case ACTION_PHOTOMETER_GET_WAVELENGTHS:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued PHOTOMETER_GET_WAVELENGTH (Phys:%u:%u, Channel:%ld)",
+                        (unsigned long)job->job_id,
+                        executor_action->node_id,
+                        executor_action->channel,
+                        (long)executor_action->debug_signed_value);
+                break;
+
+            default:
+                snprintf(info_msg, sizeof(info_msg),
+                        "DEBUG: Job #%lu: Queued %s (Phys:%u:%u)",
+                        (unsigned long)job->job_id,
+                        executor_action->action_label,
+                        executor_action->node_id,
+                        executor_action->channel);
+                break;
+        }
+        Dispatcher_SendUsbResponse(info_msg);
+
+        if (!JobManager_StageExecutorCommand(
+                job,
+                staged_commands,
+                staged_count,
+                executor_action)) {
+            return false;
+        }
+
+        command_count++;
+    }
+
+    /*
+     * Один atomic action может развернуться в несколько low-level transactions.
+     * Для фотометра это wavelength_mask -> N channel-level PHOTOMETER_SCAN.
+     */
+    if (command_count == 0U) {
         if (job->pending_actions_count > 0U) {
             job->pending_actions_count--;
         }
-        return true;
+    } else if (command_count > 1U) {
+        job->pending_actions_count =
+                (uint8_t)(job->pending_actions_count + command_count - 1U);
     }
 
-    JobManager_ExtendStepTimeout(job, executor_action.operation_timeout_ms);
-
-    switch (action->action) {
-        case ACTION_ROTATE_MOTOR:
-            snprintf(info_msg, sizeof(info_msg),
-                    "DEBUG: Job #%lu: Queued ROTATE_MOTOR (Phys:%u:%u, Steps:%ld, Speed:%u)",
-                    (unsigned long)job->job_id,
-                    executor_action.node_id,
-                    executor_action.channel,
-                    (long)executor_action.debug_signed_value,
-                    (unsigned int)executor_action.debug_value);
-            break;
-
-        case ACTION_HOME_MOTOR:
-            snprintf(info_msg, sizeof(info_msg),
-                    "DEBUG: Job #%lu: Queued HOME_MOTOR (Phys:%u:%u, Speed:%u)",
-                    (unsigned long)job->job_id,
-                    executor_action.node_id,
-                    executor_action.channel,
-                    (unsigned int)executor_action.debug_value);
-            break;
-
-        case ACTION_RUN_PUMP_DURATION:
-            snprintf(info_msg, sizeof(info_msg),
-                    "DEBUG: Job #%lu: Queued RUN_PUMP_DURATION (Phys:%u:%u, Duration:%lu)",
-                    (unsigned long)job->job_id,
-                    executor_action.node_id,
-                    executor_action.channel,
-                    (unsigned long)executor_action.debug_value);
-            break;
-
-        default:
-            snprintf(info_msg, sizeof(info_msg),
-                    "DEBUG: Job #%lu: Queued %s (Phys:%u:%u)",
-                    (unsigned long)job->job_id,
-                    executor_action.action_label,
-                    executor_action.node_id,
-                    executor_action.channel);
-            break;
-    }
-    Dispatcher_SendUsbResponse(info_msg);
-
-    return JobManager_StageExecutorCommand(
-            job,
-            staged_commands,
-            staged_count,
-            &executor_action);
+    return true;
 }
 
 /*
@@ -310,6 +459,336 @@ static void JobManager_ResetTransactions(JobContext_t* job)
             TX_OWNER_HOST_OPERATION,
             job->job_id);
 	JobManager_ResetInternalActions(job);
+	JobManager_ResetPhotometerScan(job);
+	JobManager_ResetPhotometerWavelengths(job);
+}
+
+static void JobManager_WriteU16Be(uint8_t* dst, uint16_t value)
+{
+    dst[0] = (uint8_t)(value >> 8);
+    dst[1] = (uint8_t)(value & 0xFFU);
+}
+
+static void JobManager_ResetPhotometerScan(JobContext_t* job)
+{
+    if (job == NULL) {
+        return;
+    }
+
+    memset(&job->photometer_scan, 0, sizeof(job->photometer_scan));
+}
+
+static void JobManager_PreparePhotometerScan(JobContext_t* job, uint8_t wavelength_mask)
+{
+    if (job == NULL) {
+        return;
+    }
+
+    /*
+     * Host 0x6100 требует один DATA payload: cuvette + UINT16[8].
+     * Low-level Photometer возвращает по одному DATA на channel, поэтому
+     * JobManager держит агрегатор на время scan step-а.
+     */
+    memset(&job->photometer_scan, 0, sizeof(job->photometer_scan));
+    job->photometer_scan.active = true;
+    job->photometer_scan.expected_mask = wavelength_mask;
+}
+
+static bool JobManager_SendPhotometerScanHostData(JobContext_t* job)
+{
+	if (job == NULL ||
+	        job->initial_cmd.args_type != ARGS_TYPE_PARSED ||
+	        (job->initial_recipe_id != RECIPE_PHOTOMETER_SCAN_SINGLE &&
+	         job->initial_recipe_id != RECIPE_PHOTOMETER_SCAN_ALL)) {
+	    return false;
+	}
+
+    uint8_t host_data[2U + (2U * CAN_PHOTOMETER_CHANNEL_COUNT)] = {0};
+
+    JobManager_WriteU16Be(
+            &host_data[0],
+			JobManager_GetPhotometerResultCuvette(job));
+
+    for (uint8_t channel = 0U; channel < CAN_PHOTOMETER_CHANNEL_COUNT; channel++) {
+        JobManager_WriteU16Be(
+                &host_data[2U + (2U * channel)],
+                job->photometer_scan.values[channel]);
+    }
+
+    Dispatcher_SendData(
+            job->initial_cmd.command_code,
+            HOST_RESPONSE_TYPE_DATA,
+            HOST_STATUS_OK,
+            host_data,
+            sizeof(host_data));
+
+    return true;
+}
+
+static bool JobManager_HandlePhotometerScanData(
+        JobContext_t* job,
+        const CanRoutedResponse_t* routed,
+        const ExecutorTransactionUpdate_t* update)
+{
+    if (job == NULL || routed == NULL || update == NULL ||
+            update->low_command_code != CAN_CMD_PHOTOMETER_SCAN) {
+        return true;
+    }
+
+    if (!job->photometer_scan.active || routed->parsed.data_len < 4U) {
+        return false;
+    }
+
+    const uint8_t* data = routed->parsed.payload.raw;
+    uint8_t channel = data[0];
+    uint8_t scan_status = data[1];
+
+    if (channel >= CAN_PHOTOMETER_CHANNEL_COUNT) {
+        return false;
+    }
+
+    if (update->channel_valid && update->channel != channel) {
+        return false;
+    }
+
+    uint8_t bit = (uint8_t)(1U << channel);
+    if ((job->photometer_scan.expected_mask & bit) == 0U ||
+            (job->photometer_scan.received_mask & bit) != 0U) {
+        return false;
+    }
+
+    /*
+     * Fatal optical/ADC/calibration states должны приходить NACK-ом без
+     * штатного DATA/DONE. DATA со статусом warning сохраняем, но DATA с
+     * terminal status считаем нарушением low-level contract.
+     */
+    if (scan_status > 1U) {
+        return false;
+    }
+
+    job->photometer_scan.values[channel] =
+            (uint16_t)(data[2] | ((uint16_t)data[3] << 8));
+    job->photometer_scan.received_mask |= bit;
+
+    return true;
+}
+
+static bool JobManager_HandlePhotometerScanDone(
+        JobContext_t* job,
+        const ExecutorTransactionUpdate_t* update)
+{
+    if (job == NULL || update == NULL ||
+            update->low_command_code != CAN_CMD_PHOTOMETER_SCAN) {
+        return true;
+    }
+
+    if (!job->photometer_scan.active ||
+            update->channel >= CAN_PHOTOMETER_CHANNEL_COUNT) {
+        return false;
+    }
+
+    uint8_t bit = (uint8_t)(1U << update->channel);
+    if ((job->photometer_scan.expected_mask & bit) == 0U ||
+            (job->photometer_scan.received_mask & bit) == 0U ||
+            (job->photometer_scan.done_mask & bit) != 0U) {
+        return false;
+    }
+
+    job->photometer_scan.done_mask |= bit;
+
+    if (job->photometer_scan.done_mask == job->photometer_scan.expected_mask) {
+        if (!JobManager_SendPhotometerScanHostData(job)) {
+            return false;
+        }
+        job->photometer_scan.active = false;
+    }
+
+    return true;
+}
+
+
+static void JobManager_ResetPhotometerWavelengths(JobContext_t* job)
+{
+    if (job == NULL) {
+        return;
+    }
+
+    memset(&job->photometer_wavelengths, 0, sizeof(job->photometer_wavelengths));
+}
+
+static void JobManager_PreparePhotometerWavelengths(JobContext_t* job)
+{
+    if (job == NULL) {
+        return;
+    }
+
+    memset(&job->photometer_wavelengths, 0, sizeof(job->photometer_wavelengths));
+    job->photometer_wavelengths.active = true;
+    job->photometer_wavelengths.expected_mask =
+            (uint8_t)((1U << CAN_PHOTOMETER_CHANNEL_COUNT) - 1U);
+}
+
+static bool JobManager_SendPhotometerWavelengthHostData(JobContext_t* job)
+{
+    if (job == NULL ||
+            job->initial_recipe_id != RECIPE_PHOTOMETER_GET_WAVELENGTHS) {
+        return false;
+    }
+
+    uint8_t host_data[1U + (2U * CAN_PHOTOMETER_CHANNEL_COUNT)] = {0};
+    host_data[0] = CAN_PHOTOMETER_CHANNEL_COUNT;
+
+    for (uint8_t channel = 0U; channel < CAN_PHOTOMETER_CHANNEL_COUNT; channel++) {
+        JobManager_WriteU16Be(
+                &host_data[1U + (2U * channel)],
+                job->photometer_wavelengths.wavelength_nm[channel]);
+    }
+
+    Dispatcher_SendData(
+            job->initial_cmd.command_code,
+            HOST_RESPONSE_TYPE_DATA,
+            HOST_STATUS_OK,
+            host_data,
+            sizeof(host_data));
+
+    return true;
+}
+
+static bool JobManager_HandlePhotometerWavelengthData(
+        JobContext_t* job,
+        const CanRoutedResponse_t* routed,
+        const ExecutorTransactionUpdate_t* update)
+{
+    if (job == NULL || routed == NULL || update == NULL ||
+            update->low_command_code != CAN_CMD_PHOTOMETER_GET_WAVELENGTH) {
+        return true;
+    }
+
+    if (!job->photometer_wavelengths.active || routed->parsed.data_len < 3U) {
+        return false;
+    }
+
+    const uint8_t* data = routed->parsed.payload.raw;
+    uint8_t channel = data[0];
+
+    if (channel >= CAN_PHOTOMETER_CHANNEL_COUNT) {
+        return false;
+    }
+
+    if (update->channel_valid && update->channel != channel) {
+        return false;
+    }
+
+    uint8_t bit = (uint8_t)(1U << channel);
+    if ((job->photometer_wavelengths.expected_mask & bit) == 0U ||
+            (job->photometer_wavelengths.received_mask & bit) != 0U) {
+        return false;
+    }
+
+    job->photometer_wavelengths.wavelength_nm[channel] =
+            (uint16_t)(data[1] | ((uint16_t)data[2] << 8));
+    job->photometer_wavelengths.received_mask |= bit;
+
+    return true;
+}
+
+static bool JobManager_HandlePhotometerWavelengthDone(
+        JobContext_t* job,
+        const ExecutorTransactionUpdate_t* update)
+{
+    if (job == NULL || update == NULL ||
+            update->low_command_code != CAN_CMD_PHOTOMETER_GET_WAVELENGTH) {
+        return true;
+    }
+
+    if (!job->photometer_wavelengths.active ||
+            update->channel >= CAN_PHOTOMETER_CHANNEL_COUNT) {
+        return false;
+    }
+
+    uint8_t bit = (uint8_t)(1U << update->channel);
+    if ((job->photometer_wavelengths.expected_mask & bit) == 0U ||
+            (job->photometer_wavelengths.received_mask & bit) == 0U ||
+            (job->photometer_wavelengths.done_mask & bit) != 0U) {
+        return false;
+    }
+
+    job->photometer_wavelengths.done_mask |= bit;
+
+    if (job->photometer_wavelengths.done_mask ==
+            job->photometer_wavelengths.expected_mask) {
+        if (!JobManager_SendPhotometerWavelengthHostData(job)) {
+            return false;
+        }
+        job->photometer_wavelengths.active = false;
+    }
+
+    return true;
+}
+
+
+static void JobManager_ResetPhotometerScanAll(JobContext_t* job)
+{
+	if (job == NULL) {
+		return;
+	}
+
+	memset(&job->photometer_scan_all, 0, sizeof(job->photometer_scan_all));
+}
+
+static bool JobManager_PreparePhotometerScanAll(JobContext_t* job)
+{
+	if (job == NULL ||
+			job->initial_cmd.args_type != ARGS_TYPE_PARSED ||
+			job->initial_recipe_id != RECIPE_PHOTOMETER_SCAN_ALL) {
+		return false;
+	}
+
+	if (job->initial_cmd.args.photometer_scan_all.wavelength_mask == 0U) {
+		return false;
+	}
+
+	JobManager_ResetPhotometerScanAll(job);
+
+	job->photometer_scan_all.active = true;
+	job->photometer_scan_all.first_cuvette = PT_REACTION_DISK_FIRST_CUVETTE;
+	job->photometer_scan_all.current_cuvette = PT_REACTION_DISK_FIRST_CUVETTE;
+	job->photometer_scan_all.last_cuvette = PT_REACTION_DISK_MAX_CUVETTE;
+
+	return true;
+}
+
+static bool JobManager_AdvancePhotometerScanAll(JobContext_t* job)
+{
+	if (job == NULL ||
+			job->initial_recipe_id != RECIPE_PHOTOMETER_SCAN_ALL ||
+			!job->photometer_scan_all.active) {
+		return false;
+	}
+
+	if (job->photometer_scan_all.current_cuvette >=
+			job->photometer_scan_all.last_cuvette) {
+		job->photometer_scan_all.active = false;
+		return false;
+	}
+
+	job->photometer_scan_all.current_cuvette++;
+	job->current_step_index = 0U;
+
+	return true;
+}
+
+static uint16_t JobManager_GetPhotometerResultCuvette(const JobContext_t* job)
+{
+	if (job == NULL) {
+		return 0U;
+	}
+
+	if (job->photometer_scan_all.active) {
+		return job->photometer_scan_all.current_cuvette;
+	}
+
+	return job->initial_cmd.args.photometer_scan_single.cuvette;
 }
 
 
@@ -584,6 +1063,22 @@ static void JobManager_HandleExecutorData(const CanRoutedResponse_t* routed)
 	if (update.event == EXECUTOR_TRANSACTION_EVENT_PROTOCOL_ERROR) {
 		JobManager_LogUnexpectedRoutedResponse(routed, update.reason);
 		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+		return;
+	}
+
+	if (!JobManager_HandlePhotometerScanData(job, routed, &update)) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				"invalid PHOTOMETER_SCAN DATA aggregation state");
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+		return;
+	}
+
+	if (!JobManager_HandlePhotometerWavelengthData(job, routed, &update)) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				"invalid PHOTOMETER_GET_WAVELENGTH DATA aggregation state");
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
 	}
 }
 
@@ -614,6 +1109,22 @@ static void JobManager_HandleExecutorDone(const CanRoutedResponse_t* routed)
 
 	if (update.event == EXECUTOR_TRANSACTION_EVENT_PROTOCOL_ERROR) {
 		JobManager_LogUnexpectedRoutedResponse(routed, update.reason);
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+		return;
+	}
+
+	if (!JobManager_HandlePhotometerScanDone(job, &update)) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				"invalid PHOTOMETER_SCAN DONE aggregation state");
+		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
+		return;
+	}
+
+	if (!JobManager_HandlePhotometerWavelengthDone(job, &update)) {
+		JobManager_LogUnexpectedRoutedResponse(
+				routed,
+				"invalid PHOTOMETER_GET_WAVELENGTH DONE aggregation state");
 		JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_GENERAL);
 		return;
 	}
@@ -806,6 +1317,15 @@ uint32_t JobManager_StartNewJob(const UniversalCommand_t* parsed_cmd)
     job->step_timeout_ms = JOB_TIMEOUT_MS;
     job->initial_cmd = *parsed_cmd;
 
+    JobManager_ResetPhotometerScanAll(job);
+
+	if (job->initial_recipe_id == RECIPE_PHOTOMETER_SCAN_ALL) {
+		if (!JobManager_PreparePhotometerScanAll(job)) {
+			JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_INVALID_PARAM);
+			return 0;
+		}
+	}
+
     char ack_msg[APP_USB_RESP_MAX_LEN];
     snprintf(ack_msg, sizeof(ack_msg), "INFO: Job #%lu started (Recipe ID:%d).", (unsigned long)job->job_id, (int)job->initial_recipe_id);
     Dispatcher_SendUsbResponse(ack_msg);
@@ -947,11 +1467,21 @@ static JobContext_t* JobManager_FindFreeSlot(void)
  */
 static void JobManager_ExecuteStep(JobContext_t* job)
 {
-    const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
-    if (current_step->atomic_actions == NULL || current_step->num_actions == 0) {
-        JobManager_CompleteJob(job, JOB_STATUS_COMPLETED, HOST_STATUS_OK);
-        return;
-    }
+	    const ProcessStep_t* current_step = &job->current_recipe[job->current_step_index];
+	    if (current_step->atomic_actions == NULL || current_step->num_actions == 0) {
+	        /*
+	         * Для Host 0x6000 конец one-cuvette recipe означает конец одной итерации.
+	         * Если кюветы еще остались, запускаем тот же шаблон заново для следующей.
+	         */
+	        if (JobManager_AdvancePhotometerScanAll(job)) {
+	            JobManager_ExecuteStep(job);
+	            return;
+	        }
+
+	        JobManager_CompleteJob(job, JOB_STATUS_COMPLETED, HOST_STATUS_OK);
+	        return;
+	    }
+
 
     job->step_start_time_ms = HAL_GetTick();
     job->step_timeout_ms = JOB_TIMEOUT_MS;
@@ -982,7 +1512,10 @@ static void JobManager_ExecuteStep(JobContext_t* job)
             case ACTION_HOME_MOTOR:
             case ACTION_RUN_PUMP_DURATION:
             case ACTION_START_PUMP:
-            case ACTION_STOP_PUMP: {
+            case ACTION_STOP_PUMP:
+            case ACTION_PERFORM_SCAN:
+            case ACTION_PHOTOMETER_CALIBRATE:
+            case ACTION_PHOTOMETER_GET_WAVELENGTHS: {
                 if (!JobManager_BuildAndStageExecutorAction(
                         job,
                         action,
@@ -1029,28 +1562,6 @@ static void JobManager_ExecuteStep(JobContext_t* job)
                         (unsigned long)delay_ms);
                 Dispatcher_SendUsbResponse(info_msg);
                 break;
-            }
-
-            case ACTION_PERFORM_SCAN: {
-                uint8_t sys_id = action->params.perform_scan.photometer_id;
-                uint8_t mask = action->params.perform_scan.wavelength_mask;
-
-                if (action->params.perform_scan.wavelength_mask_source ==
-                        PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK &&
-                        job->initial_cmd.args_type == ARGS_TYPE_PARSED) {
-                    mask = job->initial_cmd.args.photometer_scan_single.wavelength_mask;
-                }
-
-                snprintf(info_msg, sizeof(info_msg),
-                        "ERROR: Job #%lu: ACTION_PERFORM_SCAN unsupported "
-                        "(Photometer SysID:%u, WavelengthMask:0x%02X).",
-                        (unsigned long)job->job_id,
-                        sys_id,
-                        mask);
-                Dispatcher_SendUsbResponse(info_msg);
-
-                JobManager_CompleteJob(job, JOB_STATUS_ERROR, HOST_ERR_NOT_SUPPORTED);
-                return;
             }
 
             default:

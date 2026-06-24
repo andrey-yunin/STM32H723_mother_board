@@ -89,7 +89,26 @@ static uint8_t RecipeExecutorActionBuilder_ResolveUint8Param(
                 return ctx->initial_cmd->args.mixer_mix.mixer_id;
 
             case PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK:
-                return ctx->initial_cmd->args.photometer_scan_single.wavelength_mask;
+                switch (ctx->recipe_id) {
+                    case RECIPE_PHOTOMETER_SCAN_SINGLE:
+                        return ctx->initial_cmd->args.photometer_scan_single.wavelength_mask;
+
+                    case RECIPE_PHOTOMETER_SCAN_ALL:
+                        return ctx->initial_cmd->args.photometer_scan_all.wavelength_mask;
+
+                    case RECIPE_PHOTOMETER_CALIBRATE:
+                        return ctx->initial_cmd->args.photometer_calibrate.wavelength_mask;
+
+                    default:
+                        break;
+                }
+                break;
+
+            case PARAM_SOURCE_PHOTOMETER_CALIBRATION_TYPE:
+                if (ctx->recipe_id == RECIPE_PHOTOMETER_CALIBRATE) {
+                    return ctx->initial_cmd->args.photometer_calibrate.calibration_type;
+                }
+                break;
 
             default:
                 break;
@@ -139,6 +158,24 @@ static int32_t RecipeExecutorActionBuilder_ResolveInt32Param(
                     case RECIPE_PHOTOMETER_SCAN_SINGLE:
                         return ParamTranslator_CuvetteToSteps(
                                 ctx->initial_cmd->args.photometer_scan_single.cuvette);
+
+                    case RECIPE_PHOTOMETER_SCAN_ALL:
+                        /*
+                         * 0x6000 идет по всем кюветам. Первая итерация позиционируется к первой
+                         * кювете, последующие итерации делают относительный шаг на следующую кювету.
+                         * Low-level CAN_CMD_MOTOR_ROTATE выполняется моторным executor-ом как relative move.
+                         */
+                        if (ctx->photometer_scan_all_active) {
+                            if (ctx->photometer_scan_all_current_cuvette <=
+                                    PT_REACTION_DISK_FIRST_CUVETTE) {
+                                return ParamTranslator_CuvetteToSteps(
+                                        PT_REACTION_DISK_FIRST_CUVETTE);
+                            }
+
+                            return (int32_t)PT_REACTION_DISK_STEPS_PER_CUVETTE_UNIT;
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -510,14 +547,284 @@ static bool RecipeExecutorActionBuilder_BuildHomeMotor(
     return true;
 }
 
-bool RecipeExecutorActionBuilder_Build(
+static uint8_t RecipeExecutorActionBuilder_PhotometerSysIdForChannel(uint8_t channel)
+{
+    /*
+     * Host wavelength_mask разворачивается в системные ресурсы фотометра.
+     * Дальше общий DeviceMapping переводит system_id в node_id + ch_idx.
+     */
+    switch (channel) {
+        case CAN_PHOTOMETER_CHANNEL_340: return SYS_PHOTOMETER_WL_340;
+        case CAN_PHOTOMETER_CHANNEL_405: return SYS_PHOTOMETER_WL_405;
+        case CAN_PHOTOMETER_CHANNEL_450: return SYS_PHOTOMETER_WL_450;
+        case CAN_PHOTOMETER_CHANNEL_510: return SYS_PHOTOMETER_WL_510;
+        case CAN_PHOTOMETER_CHANNEL_546: return SYS_PHOTOMETER_WL_546;
+        case CAN_PHOTOMETER_CHANNEL_578: return SYS_PHOTOMETER_WL_578;
+        case CAN_PHOTOMETER_CHANNEL_630: return SYS_PHOTOMETER_WL_630;
+        case CAN_PHOTOMETER_CHANNEL_670: return SYS_PHOTOMETER_WL_670;
+        default:                         return 0U;
+    }
+}
+
+static bool RecipeExecutorActionBuilder_BuildPhotometerScan(
         const RecipeExecutorActionContext_t* ctx,
         const AtomicAction_t* atomic_action,
-        RecipeExecutorAction_t* out_action,
+        RecipeExecutorAction_t* out_actions,
+        uint8_t max_actions,
+        uint8_t* out_count,
         char* error_msg,
         size_t error_msg_len)
 {
-    if (ctx == NULL || atomic_action == NULL || out_action == NULL || ctx->initial_cmd == NULL) {
+    uint8_t wavelength_mask = RecipeExecutorActionBuilder_ResolveUint8Param(
+            ctx,
+            atomic_action->params.perform_scan.wavelength_mask_source,
+            atomic_action->params.perform_scan.wavelength_mask);
+
+    if (wavelength_mask == 0U) {
+        RecipeExecutorActionBuilder_SetError(
+                error_msg,
+                error_msg_len,
+                "ERROR: Job #%lu: Empty photometer wavelength mask 0x%02X",
+                ctx->job_id,
+                wavelength_mask);
+        return false;
+    }
+
+    for (uint8_t channel = 0U; channel < CAN_PHOTOMETER_CHANNEL_COUNT; channel++) {
+        uint8_t bit = (uint8_t)(1U << channel);
+
+        if ((wavelength_mask & bit) == 0U) {
+            continue;
+        }
+
+        if (*out_count >= max_actions) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Too many photometer channels in mask 0x%02X",
+                    ctx->job_id,
+                    wavelength_mask);
+            return false;
+        }
+
+        uint8_t sys_id = RecipeExecutorActionBuilder_PhotometerSysIdForChannel(channel);
+        DevicePhysAddr_t phys_addr = DeviceMapping_GetPhotometerPhysAddr(sys_id);
+
+        if (!phys_addr.is_valid) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Invalid Photometer SysID %u",
+                    ctx->job_id,
+                    sys_id);
+            return false;
+        }
+
+        RecipeExecutorAction_t* out_action = &out_actions[*out_count];
+        memset(out_action, 0, sizeof(*out_action));
+
+        /*
+         * Low-level PHOTOMETER_SCAN измеряет один wavelength-channel.
+         * Host-level mask остается на уровне Host/Conductor и здесь уже
+         * развернута в набор channel-level executor transactions.
+         */
+        out_action->command_required = true;
+        out_action->low_command_code = CAN_CMD_PHOTOMETER_SCAN;
+        out_action->node_id = phys_addr.node_id;
+        out_action->channel = phys_addr.ch_idx;
+        out_action->channel_valid = true;
+        out_action->response_policy = EXECUTOR_ACTION_RESPONSE_DATA_THEN_DONE;
+        out_action->operation_timeout_ms = ctx->current_step_timeout_ms;
+        out_action->action_label = "PHOTOMETER_SCAN";
+        out_action->debug_value = wavelength_mask;
+        out_action->debug_signed_value = channel;
+
+        Packer_CreatePhotometerScanMsg(phys_addr.ch_idx, &out_action->can_msg);
+        out_action->can_msg.id = CAN_BUILD_ID(
+                CAN_PRIORITY_HIGH,
+                CAN_MSG_TYPE_COMMAND,
+                phys_addr.node_id,
+                CAN_ADDR_CONDUCTOR);
+
+        (*out_count)++;
+    }
+
+    return true;
+}
+
+static bool RecipeExecutorActionBuilder_BuildPhotometerCalibrate(
+        const RecipeExecutorActionContext_t* ctx,
+        const AtomicAction_t* atomic_action,
+        RecipeExecutorAction_t* out_actions,
+        uint8_t max_actions,
+        uint8_t* out_count,
+        char* error_msg,
+        size_t error_msg_len)
+{
+    uint8_t calibration_type = RecipeExecutorActionBuilder_ResolveUint8Param(
+            ctx,
+            atomic_action->params.photometer_calibrate.calibration_type_source,
+            atomic_action->params.photometer_calibrate.calibration_type);
+    uint8_t wavelength_mask = RecipeExecutorActionBuilder_ResolveUint8Param(
+            ctx,
+            atomic_action->params.photometer_calibrate.wavelength_mask_source,
+            atomic_action->params.photometer_calibrate.wavelength_mask);
+
+    if (calibration_type > 1U) {
+        RecipeExecutorActionBuilder_SetError(
+                error_msg,
+                error_msg_len,
+                "ERROR: Job #%lu: Invalid photometer calibration type %u",
+                ctx->job_id,
+                calibration_type);
+        return false;
+    }
+
+    if (wavelength_mask == 0U) {
+        RecipeExecutorActionBuilder_SetError(
+                error_msg,
+                error_msg_len,
+                "ERROR: Job #%lu: Empty photometer calibration mask 0x%02X",
+                ctx->job_id,
+                wavelength_mask);
+        return false;
+    }
+
+    for (uint8_t channel = 0U; channel < CAN_PHOTOMETER_CHANNEL_COUNT; channel++) {
+        uint8_t bit = (uint8_t)(1U << channel);
+
+        if ((wavelength_mask & bit) == 0U) {
+            continue;
+        }
+
+        if (*out_count >= max_actions) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Too many photometer calibration channels in mask 0x%02X",
+                    ctx->job_id,
+                    wavelength_mask);
+            return false;
+        }
+
+        uint8_t sys_id = RecipeExecutorActionBuilder_PhotometerSysIdForChannel(channel);
+        DevicePhysAddr_t phys_addr = DeviceMapping_GetPhotometerPhysAddr(sys_id);
+
+        if (!phys_addr.is_valid) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Invalid Photometer SysID %u",
+                    ctx->job_id,
+                    sys_id);
+            return false;
+        }
+
+        RecipeExecutorAction_t* out_action = &out_actions[*out_count];
+        memset(out_action, 0, sizeof(*out_action));
+
+        out_action->command_required = true;
+        out_action->low_command_code = CAN_CMD_PHOTOMETER_CALIBRATE;
+        out_action->node_id = phys_addr.node_id;
+        out_action->channel = phys_addr.ch_idx;
+        out_action->channel_valid = true;
+        out_action->response_policy = EXECUTOR_ACTION_RESPONSE_DONE_ONLY;
+        out_action->operation_timeout_ms = RecipeExecutorActionBuilder_MaxU32(
+                ctx->current_step_timeout_ms,
+                JOB_PHOTOMETER_CALIBRATE_TIMEOUT_MS);
+        out_action->action_label = "PHOTOMETER_CALIBRATE";
+        out_action->debug_value = calibration_type;
+        out_action->debug_signed_value = channel;
+
+        Packer_CreatePhotometerCalibrateMsg(
+                phys_addr.ch_idx,
+                calibration_type,
+                &out_action->can_msg);
+        out_action->can_msg.id = CAN_BUILD_ID(
+                CAN_PRIORITY_HIGH,
+                CAN_MSG_TYPE_COMMAND,
+                phys_addr.node_id,
+                CAN_ADDR_CONDUCTOR);
+
+        (*out_count)++;
+    }
+
+    return true;
+}
+
+static bool RecipeExecutorActionBuilder_BuildPhotometerGetWavelengths(
+        const RecipeExecutorActionContext_t* ctx,
+        RecipeExecutorAction_t* out_actions,
+        uint8_t max_actions,
+        uint8_t* out_count,
+        char* error_msg,
+        size_t error_msg_len)
+{
+    for (uint8_t channel = 0U; channel < CAN_PHOTOMETER_CHANNEL_COUNT; channel++) {
+        if (*out_count >= max_actions) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Too many photometer wavelength channels",
+                    ctx->job_id,
+                    channel);
+            return false;
+        }
+
+        uint8_t sys_id = RecipeExecutorActionBuilder_PhotometerSysIdForChannel(channel);
+        DevicePhysAddr_t phys_addr = DeviceMapping_GetPhotometerPhysAddr(sys_id);
+
+        if (!phys_addr.is_valid) {
+            RecipeExecutorActionBuilder_SetError(
+                    error_msg,
+                    error_msg_len,
+                    "ERROR: Job #%lu: Invalid Photometer SysID %u",
+                    ctx->job_id,
+                    sys_id);
+            return false;
+        }
+
+        RecipeExecutorAction_t* out_action = &out_actions[*out_count];
+        memset(out_action, 0, sizeof(*out_action));
+
+        out_action->command_required = true;
+        out_action->low_command_code = CAN_CMD_PHOTOMETER_GET_WAVELENGTH;
+        out_action->node_id = phys_addr.node_id;
+        out_action->channel = phys_addr.ch_idx;
+        out_action->channel_valid = true;
+        out_action->response_policy = EXECUTOR_ACTION_RESPONSE_DATA_THEN_DONE;
+        out_action->operation_timeout_ms = ctx->current_step_timeout_ms;
+        out_action->action_label = "PHOTOMETER_GET_WAVELENGTH";
+        out_action->debug_signed_value = channel;
+
+        Packer_CreatePhotometerGetWavelengthMsg(phys_addr.ch_idx, &out_action->can_msg);
+        out_action->can_msg.id = CAN_BUILD_ID(
+                CAN_PRIORITY_HIGH,
+                CAN_MSG_TYPE_COMMAND,
+                phys_addr.node_id,
+                CAN_ADDR_CONDUCTOR);
+
+        (*out_count)++;
+    }
+
+    return true;
+}
+
+bool RecipeExecutorActionBuilder_Build(
+        const RecipeExecutorActionContext_t* ctx,
+        const AtomicAction_t* atomic_action,
+        RecipeExecutorAction_t* out_actions,
+        uint8_t max_actions,
+        uint8_t* out_count,
+        char* error_msg,
+        size_t error_msg_len)
+{
+    if (out_count != NULL) {
+        *out_count = 0U;
+    }
+
+    if (ctx == NULL || atomic_action == NULL || out_actions == NULL ||
+            out_count == NULL || ctx->initial_cmd == NULL || max_actions == 0U) {
         RecipeExecutorActionBuilder_SetError(
                 error_msg,
                 error_msg_len,
@@ -529,44 +836,93 @@ bool RecipeExecutorActionBuilder_Build(
 
     switch (atomic_action->action) {
         case ACTION_ROTATE_MOTOR:
-            return RecipeExecutorActionBuilder_BuildRotateMotor(
+            if (!RecipeExecutorActionBuilder_BuildRotateMotor(
                     ctx,
                     atomic_action,
-                    out_action,
+                    &out_actions[0],
                     error_msg,
-                    error_msg_len);
+                    error_msg_len)) {
+                return false;
+            }
+            *out_count = 1U;
+            return true;
 
         case ACTION_HOME_MOTOR:
-            return RecipeExecutorActionBuilder_BuildHomeMotor(
+            if (!RecipeExecutorActionBuilder_BuildHomeMotor(
                     ctx,
                     atomic_action,
-                    out_action,
+                    &out_actions[0],
                     error_msg,
-                    error_msg_len);
+                    error_msg_len)) {
+                return false;
+            }
+            *out_count = 1U;
+            return true;
 
         case ACTION_RUN_PUMP_DURATION:
-            return RecipeExecutorActionBuilder_BuildPumpDuration(
+            if (!RecipeExecutorActionBuilder_BuildPumpDuration(
                     ctx,
                     atomic_action,
-                    out_action,
+                    &out_actions[0],
                     error_msg,
-                    error_msg_len);
+                    error_msg_len)) {
+                return false;
+            }
+            *out_count = 1U;
+            return true;
 
         case ACTION_START_PUMP:
-            return RecipeExecutorActionBuilder_BuildPumpSwitch(
+            if (!RecipeExecutorActionBuilder_BuildPumpSwitch(
                     ctx,
                     atomic_action,
                     true,
-                    out_action,
+                    &out_actions[0],
                     error_msg,
-                    error_msg_len);
+                    error_msg_len)) {
+                return false;
+            }
+            *out_count = 1U;
+            return true;
 
         case ACTION_STOP_PUMP:
-            return RecipeExecutorActionBuilder_BuildPumpSwitch(
+            if (!RecipeExecutorActionBuilder_BuildPumpSwitch(
                     ctx,
                     atomic_action,
                     false,
-                    out_action,
+                    &out_actions[0],
+                    error_msg,
+                    error_msg_len)) {
+                return false;
+            }
+            *out_count = 1U;
+            return true;
+
+        case ACTION_PERFORM_SCAN:
+            return RecipeExecutorActionBuilder_BuildPhotometerScan(
+                    ctx,
+                    atomic_action,
+                    out_actions,
+                    max_actions,
+                    out_count,
+                    error_msg,
+                    error_msg_len);
+
+        case ACTION_PHOTOMETER_CALIBRATE:
+            return RecipeExecutorActionBuilder_BuildPhotometerCalibrate(
+                    ctx,
+                    atomic_action,
+                    out_actions,
+                    max_actions,
+                    out_count,
+                    error_msg,
+                    error_msg_len);
+
+        case ACTION_PHOTOMETER_GET_WAVELENGTHS:
+            return RecipeExecutorActionBuilder_BuildPhotometerGetWavelengths(
+                    ctx,
+                    out_actions,
+                    max_actions,
+                    out_count,
                     error_msg,
                     error_msg_len);
 

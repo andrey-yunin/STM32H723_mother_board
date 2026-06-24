@@ -84,6 +84,16 @@ typedef struct {
 } ParsedArgs_PhotometerScanSingle;
 
 typedef struct {
+	uint8_t wavelength_mask;
+} ParsedArgs_PhotometerScanAll;
+
+typedef struct {
+	uint8_t calibration_type;
+	uint8_t wavelength_mask;
+} ParsedArgs_PhotometerCalibrate;
+
+
+typedef struct {
 	uint16_t volume_ul;
 	uint16_t cuvette;
 } ParsedArgs_WashStationFill;
@@ -126,6 +136,9 @@ typedef struct {
 		ParsedArgs_PhotometerScanSingle photometer_scan_single;
 		ParsedArgs_WashStationFill wash_station_fill;
 		ParsedArgs_SensorGetTemp sensor_get_temp;
+		ParsedArgs_PhotometerScanAll photometer_scan_all;
+		ParsedArgs_PhotometerCalibrate photometer_calibrate;
+
 	} args;
 } UniversalCommand_t;
 

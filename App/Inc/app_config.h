@@ -34,6 +34,7 @@
 #define JOB_PUMP_DURATION_MARGIN_MS    1000  // Запас к duration_ms для finite-команд Fluidics.
 #define JOB_MOTION_ROTATE_MARGIN_MS    1000  // Запас к расчетному времени finite Motion ROTATE.
 #define JOB_MOTION_HOME_TIMEOUT_MS     30000 // Отдельный timeout для HOME-профиля Motion.
+#define JOB_PHOTOMETER_CALIBRATE_TIMEOUT_MS 10000U // CALIBRATE может быть длиннее scan/read-only операций.
 
 // --- Executor Transaction Configuration ---
 // ACK должен приходить быстро: исполнитель подтверждает только прием команды.

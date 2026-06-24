@@ -48,9 +48,29 @@ typedef enum {
 	HOST_ERR_COVER_OPEN      = 0x000CU,
 	HOST_ERR_LOW_LIQUID      = 0x000DU,
 	HOST_ERR_HARDWARE        = 0x000EU,
-	HOST_ERR_CALIBRATION     = 0x000FU
-} HostErrorCode_t;
+	HOST_ERR_CALIBRATION     = 0x000FU,
 
+	/*
+	 * Host photometry-domain errors from Host_Commands_API.
+	 *
+	 * Важно: это внешний Host registry. Не каждый код обязан иметь текущий
+	 * low-level источник в Photometer Executor. Источник ошибки определяется
+	 * отдельным mapping-слоем Дирижера.
+	 */
+	 HOST_ERR_PHOT_GENERAL      = 0x5000U,
+	 HOST_ERR_PHOT_LAMP         = 0x5001U,
+	 HOST_ERR_PHOT_LAMP_OFF     = 0x5002U,
+	 HOST_ERR_PHOT_LAMP_WEAK    = 0x5003U,
+	 HOST_ERR_PHOT_FILTER       = 0x5004U,
+	 HOST_ERR_PHOT_DETECTOR     = 0x5005U,
+	 HOST_ERR_PHOT_ADC          = 0x5006U,
+	 HOST_ERR_PHOT_OVERFLOW     = 0x5007U,
+	 HOST_ERR_PHOT_UNDERFLOW    = 0x5008U,
+	 HOST_ERR_PHOT_CALIBRATION  = 0x5009U,
+	 HOST_ERR_PHOT_WAVELENGTH   = 0x500AU,
+	 HOST_ERR_PHOT_CUVETTE      = 0x500BU
+
+} HostErrorCode_t;
 
 
 /**

@@ -63,10 +63,28 @@ static const HostRecipeCommandDescriptor_t host_recipe_command_table[] = {
         .recipe_id = RECIPE_SAMPLE_ROTATE
     },
     {
+        .command_code = 0x6000,
+        .min_params_len = 1,
+        .max_params_len = 1,
+        .recipe_id = RECIPE_PHOTOMETER_SCAN_ALL
+    },
+    {
         .command_code = 0x6100,
         .min_params_len = 3,
         .max_params_len = 3,
         .recipe_id = RECIPE_PHOTOMETER_SCAN_SINGLE
+    },
+    {
+        .command_code = 0x6200,
+        .min_params_len = 2,
+        .max_params_len = 2,
+        .recipe_id = RECIPE_PHOTOMETER_CALIBRATE
+    },
+    {
+        .command_code = 0x6300,
+        .min_params_len = 0,
+        .max_params_len = 0,
+        .recipe_id = RECIPE_PHOTOMETER_GET_WAVELENGTHS
     },
 };
 

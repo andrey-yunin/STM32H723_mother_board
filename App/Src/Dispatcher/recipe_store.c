@@ -556,16 +556,51 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
 			 .num_actions = 1
 			 },
 
-		// Шаг 2: Выполнение сканирования.
-		{.atomic_actions = (const AtomicAction_t[]){
-			{ .action = ACTION_PERFORM_SCAN, .params.perform_scan = {
-					.photometer_id = SYS_PHOTOMETER_MAIN,
-					.photometer_id_source = PARAM_SOURCE_STATIC,
-					.wavelength_mask = 0, // Будет заменено динамическим параметром
-					.wavelength_mask_source = PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK
-				}}
+			// Шаг 2: Выполнение сканирования.
+			{.atomic_actions = (const AtomicAction_t[]){
+				{ .action = ACTION_PERFORM_SCAN, .params.perform_scan = {
+						.wavelength_mask = 0, // Будет заменено динамическим параметром
+						.wavelength_mask_source = PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK
+					}}
+				},
+				.num_actions = 1
+				},
+
+		// Маркер конца рецепта
+		{ .atomic_actions = NULL, .num_actions = 0 }
+		 };
+
+ /**
+  * @brief Рецепт: Калибровка фотометра по выбранным wavelength channels.
+  * Выполняется командой PHOTOMETER_CALIBRATE (0x6200).
+  */
+ const ProcessStep_t g_recipe_photometer_calibrate[] = {
+		 {
+			 .atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_PHOTOMETER_CALIBRATE, .params.photometer_calibrate = {
+						 .calibration_type = 0,
+						 .calibration_type_source = PARAM_SOURCE_PHOTOMETER_CALIBRATION_TYPE,
+						 .wavelength_mask = 0,
+						 .wavelength_mask_source = PARAM_SOURCE_PHOTOMETER_WAVELENGTH_MASK
+					}}
+				},
+				.num_actions = 1
 			},
-			.num_actions = 1
+
+		// Маркер конца рецепта
+		{ .atomic_actions = NULL, .num_actions = 0 }
+		 };
+
+ /**
+  * @brief Рецепт: Запрос доступных длин волн фотометра.
+  * Выполняется командой PHOTOMETER_GET_WAVELENGTHS (0x6300).
+  */
+ const ProcessStep_t g_recipe_photometer_get_wavelengths[] = {
+		 {
+			 .atomic_actions = (const AtomicAction_t[]){
+				 { .action = ACTION_PHOTOMETER_GET_WAVELENGTHS }
+				},
+				.num_actions = 1
 			},
 
 		// Маркер конца рецепта
@@ -629,8 +664,19 @@ const ProcessStep_t g_recipe_dispenser_aspirate[] = {
         case RECIPE_WASH_STATION_FILL: // <-- added 17/02/2026 Новое: Заполнение моющей станции
         	return g_recipe_wash_station_fill;
 
+        case RECIPE_PHOTOMETER_SCAN_ALL:
+             /*
+              * SCAN_ALL использует g_recipe_photometer_scan_single как шаблон одной
+              * итерации: позиционирование текущей кюветы + scan wavelength channels.
+              * Внешний цикл по кюветам принадлежит JobManager.
+              */
+             return g_recipe_photometer_scan_single;
 
+        case RECIPE_PHOTOMETER_CALIBRATE:
+        	return g_recipe_photometer_calibrate;
 
+        case RECIPE_PHOTOMETER_GET_WAVELENGTHS:
+        	return g_recipe_photometer_get_wavelengths;
 
 
         // --- [ADD_NEW_COMMAND] ---

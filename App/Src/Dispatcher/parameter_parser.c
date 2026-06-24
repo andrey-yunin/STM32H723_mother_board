@@ -176,6 +176,32 @@ bool Parameters_Parse(UniversalCommand_t* cmd, const uint8_t* raw_params, uint16
     		}
     	break;
 
+    case 0x6000: // PHOTOMETER_SCAN_ALL: сканирование всех кювет по mask длин волн
+          if (params_len == 1) {
+              cmd->args.photometer_scan_all.wavelength_mask = raw_params[0];
+              cmd->args_type = ARGS_TYPE_PARSED;
+          } else {
+              success = false;
+          }
+          break;
+
+    case 0x6200: // PHOTOMETER_CALIBRATE: type + mask длин волн
+          if (params_len == 2 && raw_params[0] <= 1U && raw_params[1] != 0U) {
+              cmd->args.photometer_calibrate.calibration_type = raw_params[0];
+              cmd->args.photometer_calibrate.wavelength_mask = raw_params[1];
+              cmd->args_type = ARGS_TYPE_PARSED;
+          } else {
+              success = false;
+          }
+          break;
+
+    case 0x6300: // PHOTOMETER_GET_WAVELENGTHS: без параметров
+          if (params_len == 0) {
+              cmd->args_type = ARGS_TYPE_PARSED;
+          } else {
+              success = false;
+          }
+          break;
 
     case 0x4100: // WASH_STATION_FILL command added 17/02/2026
     	// volume (2) + cuvette (2) = 4 байта

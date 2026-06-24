@@ -59,6 +59,37 @@ DevicePhysAddr_t DeviceMapping_GetFluidicPhysAddr(uint8_t system_id)
     return addr;
 }
 
+
+/**
+ * @brief Маппинг wavelength-каналов на плату Photometer (Node 0x50).
+ *
+ * system_id обозначает конкретный фотометрический ресурс, как sensor_id у
+ * Thermo. Возвращаемый ch_idx напрямую идет в byte 2 low-level команд
+ * PHOTOMETER_SCAN/CALIBRATE/GET_WAVELENGTH.
+ */
+DevicePhysAddr_t DeviceMapping_GetPhotometerPhysAddr(uint8_t system_id)
+{
+    DevicePhysAddr_t addr = {CAN_ADDR_PHOTOMETER_BOARD, 0U, true};
+
+    switch (system_id) {
+        case SYS_PHOTOMETER_WL_340: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_340; break;
+        case SYS_PHOTOMETER_WL_405: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_405; break;
+        case SYS_PHOTOMETER_WL_450: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_450; break;
+        case SYS_PHOTOMETER_WL_510: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_510; break;
+        case SYS_PHOTOMETER_WL_546: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_546; break;
+        case SYS_PHOTOMETER_WL_578: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_578; break;
+        case SYS_PHOTOMETER_WL_630: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_630; break;
+        case SYS_PHOTOMETER_WL_670: addr.ch_idx = CAN_PHOTOMETER_CHANNEL_670; break;
+
+        default:
+            addr.is_valid = false;
+            break;
+    }
+
+    return addr;
+}
+
+
 uint32_t DeviceMapping_GetRequiredNodesMask(uint8_t modules_mask) {
 	uint32_t nodes_mask = 0;
 
@@ -94,18 +125,16 @@ DevicePhysAddr_t DeviceMapping_GetThermoPhysAddr(uint8_t system_id)
 	DevicePhysAddr_t addr = {CAN_ADDR_THERMO_BOARD, 0, true};
 
 	switch (system_id) {
-		case 1: addr.ch_idx = 0; break; // Реакционный диск
-		case 2: addr.ch_idx = 1; break; // Ротор реагентов #1
-		case 3: addr.ch_idx = 2; break; // Ротор реагентов #2
-		case 4: addr.ch_idx = 3; break; // Диск образцов
+		case SYS_THERMO_REACTION_DISK:   addr.ch_idx = 0; break;
+		case SYS_THERMO_REAGENT_ROTOR_1: addr.ch_idx = 1; break;
+		case SYS_THERMO_REAGENT_ROTOR_2: addr.ch_idx = 2; break;
+		case SYS_THERMO_SAMPLE_DISK:     addr.ch_idx = 3; break;
 		default:
 			addr.is_valid = false;
 			break;
 			}
 	return addr;
 }
-
-
 
 
 

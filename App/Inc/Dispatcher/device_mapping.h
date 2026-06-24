@@ -17,7 +17,7 @@
  * @brief Структура физического адреса исполнителя
  */
 typedef struct {
-    uint8_t node_id;    // CAN NodeID (0x20, 0x30, 0x40)
+    uint8_t node_id;    // CAN NodeID (0x20, 0x30, 0x40, 0x50)
     uint8_t ch_idx;     // 0-based физический индекс канала на плате
     bool    is_valid;   // Флаг корректности маппинга
 } DevicePhysAddr_t;
@@ -39,6 +39,14 @@ DevicePhysAddr_t DeviceMapping_GetFluidicPhysAddr(uint8_t system_id);
  */
 DevicePhysAddr_t DeviceMapping_GetThermoPhysAddr(uint8_t system_id);
 
+/**
+ * @brief Трансляция системного ID wavelength-канала фотометра в физический адрес.
+ *
+ * Как и для Motion/Fluidics/Thermo, system_id обозначает конкретный ресурс
+ * исполнителя, а ch_idx является executor-local каналом. Для фотометра ch_idx
+ * передается в byte 2 low-level команд 0x0401/0x0402/0x0403.
+ */
+DevicePhysAddr_t DeviceMapping_GetPhotometerPhysAddr(uint8_t system_id);
 
 
 /**

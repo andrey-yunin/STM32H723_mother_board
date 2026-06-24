@@ -153,6 +153,35 @@ void Packer_CreateGetAllTempsMsg(CAN_Message_t* out_msg)
 }
 
 // ============================================================================
+// ---             РЕАЛИЗАЦИЯ ФУНКЦИЙ УПАКОВЩИКА (Photometer)                 ---
+// ============================================================================
+
+void Packer_CreatePhotometerScanMsg(uint8_t wavelength_channel, CAN_Message_t* out_msg)
+{
+    packer_init_header(out_msg, CAN_ADDR_PHOTOMETER_BOARD);
+    packer_fill_payload(out_msg, CAN_CMD_PHOTOMETER_SCAN, wavelength_channel, 0U);
+}
+
+void Packer_CreatePhotometerCalibrateMsg(uint8_t wavelength_channel, uint8_t calibration_type, CAN_Message_t* out_msg)
+{
+    packer_init_header(out_msg, CAN_ADDR_PHOTOMETER_BOARD);
+    /*
+     * Low-level 0x0402 uses byte 2 as wavelength_channel and byte 3 as
+     * calibration_type. Bytes 4..7 stay reserved zero.
+     */
+    packer_fill_payload(out_msg,
+            CAN_CMD_PHOTOMETER_CALIBRATE,
+            wavelength_channel,
+            (uint32_t)calibration_type);
+}
+
+void Packer_CreatePhotometerGetWavelengthMsg(uint8_t wavelength_channel, CAN_Message_t* out_msg)
+{
+    packer_init_header(out_msg, CAN_ADDR_PHOTOMETER_BOARD);
+    packer_fill_payload(out_msg, CAN_CMD_PHOTOMETER_GET_WAVELENGTH, wavelength_channel, 0U);
+}
+
+// ============================================================================
 // ---               РЕАЛИЗАЦИЯ ФУНКЦИЙ УПАКОВЩИКА (Service)                ---
 // ============================================================================
 

@@ -60,7 +60,10 @@ CMD_WASH_STATION_WASH = 0x4000
 CMD_WASH_STATION_FILL = 0x4100
 CMD_REAGENT_ROTATE = 0x5000
 CMD_SAMPLE_ROTATE = 0x5110
+CMD_PHOTOMETER_SCAN_ALL = 0x6000
 CMD_PHOTOMETER_SCAN_SINGLE = 0x6100
+CMD_PHOTOMETER_CALIBRATE = 0x6200
+CMD_PHOTOMETER_GET_WAVELENGTHS = 0x6300
 CMD_THERMO_GET_TEMP_LEGACY = 0x8000
 CMD_SENSOR_GET_ALL_TEMPS = 0x9010
 CMD_SENSOR_GET_TEMP = 0x9011
@@ -485,14 +488,6 @@ def test_legacy_thermo_get_temp_unsupported() -> bool:
     return wait_for_error(CMD_THERMO_GET_TEMP_LEGACY, HOST_ERR_NOT_SUPPORTED)
 
 
-def test_photometer_scan_single_unsupported(cuvette: int, wavelength_mask: int) -> bool:
-    print("\n=== PHOTOMETER_SCAN_SINGLE explicit unsupported baseline ===")
-    params = struct.pack(">HB", cuvette, wavelength_mask)
-    if not send_and_expect_ack(CMD_PHOTOMETER_SCAN_SINGLE, params):
-        return False
-    return wait_for_done(CMD_PHOTOMETER_SCAN_SINGLE, HOST_ERR_NOT_SUPPORTED)
-
-
 def test_sensor_get_temp(sensor_id: int) -> bool:
     print(f"\n=== SENSOR_GET_TEMP 0x9011 sensor_id={sensor_id} ===")
     if not send_and_expect_ack(CMD_SENSOR_GET_TEMP, bytes([sensor_id & 0xFF])):
@@ -654,7 +649,6 @@ def main(argv: list[str] | None = None) -> int:
                 tests.append((name, lambda c=command_code, p=params, n=name: run_ack_done_test(n, c, p)))
 
         if args.include_unsupported:
-            tests.append(("PHOTOMETER unsupported", lambda: test_photometer_scan_single_unsupported(10, 0x03)))
             tests.append(("Legacy 0x8000 unsupported", test_legacy_thermo_get_temp_unsupported))
             tests.append(("Unknown command", test_unknown_command))
 
